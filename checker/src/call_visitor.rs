@@ -42,7 +42,8 @@ pub struct CallVisitor<'call, 'block, 'analysis, 'compilation, 'tcx> {
     pub callee_known_name: KnownNames,
     pub callee_generic_argument_map: Option<HashMap<rustc_span::Symbol, GenericArg<'tcx>>>,
     pub cleanup: Option<mir::BasicBlock>,
-    pub destination: Option<(mir::Place<'tcx>, mir::BasicBlock)>,
+    pub destination: mir::Place<'tcx>,
+    pub target: Option<mir::BasicBlock>,
     pub environment_before_call: Environment,
     pub function_constant_args: &'call [(Rc<Path>, Ty<'tcx>, Rc<AbstractValue>)],
     pub initial_type_cache: Option<Rc<HashMap<Rc<Path>, Ty<'tcx>>>>,
@@ -80,7 +81,8 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                 actual_args: vec![],
                 actual_argument_types: vec![],
                 cleanup: None,
-                destination: None,
+                destination: mir::Place::return_place(),
+                target: None,
                 environment_before_call,
                 function_constant_args: &[],
                 initial_type_cache: None,
@@ -415,52 +417,48 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
     /// deep copy (after calling deal_with_missing_summary).
     #[logfn_inputs(DEBUG)]
     pub fn handle_clone(&mut self, summary: &Summary) {
-        if let Some((place, _)) = &self.destination {
-            checked_assume!(self.actual_args.len() == 1);
-            let target_type = ExpressionType::from(
-                self.type_visitor()
-                    .get_dereferenced_type(self.actual_argument_types[0])
-                    .kind(),
+        checked_assume!(self.actual_args.len() == 1);
+        let target_type = ExpressionType::from(
+            self.type_visitor()
+                .get_dereferenced_type(self.actual_argument_types[0])
+                .kind(),
+        );
+        let source_path = Path::new_deref(self.actual_args[0].0.clone(), target_type)
+            .canonicalize(&self.block_visitor.bv.current_environment);
+        let target_type = self
+            .type_visitor()
+            .get_rustc_place_type(&self.destination, self.block_visitor.bv.current_span);
+        let target_path = self.block_visitor.visit_rh_place(&self.destination);
+        if !summary.is_computed {
+            // Now just do a deep copy and carry on.
+            self.block_visitor.bv.copy_or_move_elements(
+                target_path,
+                source_path,
+                target_type,
+                false,
             );
-            let source_path = Path::new_deref(self.actual_args[0].0.clone(), target_type)
-                .canonicalize(&self.block_visitor.bv.current_environment);
-            let target_type = self
-                .type_visitor()
-                .get_rustc_place_type(place, self.block_visitor.bv.current_span);
-            let target_path = self.block_visitor.visit_rh_place(place);
-            if !summary.is_computed {
-                // Now just do a deep copy and carry on.
-                self.block_visitor.bv.copy_or_move_elements(
-                    target_path,
-                    source_path,
-                    target_type,
-                    false,
-                );
-            } else {
-                self.transfer_and_refine_into_current_environment(summary);
-                // Since the clone code is arbitrary it might not have copied model fields and tag fields.
-                // So just copy them again.
-                let value_map = self.block_visitor.bv.current_environment.value_map.clone();
-                for (path, value) in value_map.iter().filter(|(p, _)| {
-                    if let PathEnum::QualifiedPath { selector, .. } = &p.value {
-                        matches!(
-                            **selector,
-                            PathSelector::ModelField(..) | PathSelector::TagField
-                        ) && p.is_rooted_by(&source_path)
-                    } else {
-                        false
-                    }
-                }) {
-                    let target_path = path.replace_root(&source_path, target_path.clone());
-                    self.block_visitor
-                        .bv
-                        .update_value_at(target_path, value.clone());
-                }
-            }
-            self.use_entry_condition_as_exit_condition();
         } else {
-            assume_unreachable!();
+            self.transfer_and_refine_into_current_environment(summary);
+            // Since the clone code is arbitrary it might not have copied model fields and tag fields.
+            // So just copy them again.
+            let value_map = self.block_visitor.bv.current_environment.value_map.clone();
+            for (path, value) in value_map.iter().filter(|(p, _)| {
+                if let PathEnum::QualifiedPath { selector, .. } = &p.value {
+                    matches!(
+                        **selector,
+                        PathSelector::ModelField(..) | PathSelector::TagField
+                    ) && p.is_rooted_by(&source_path)
+                } else {
+                    false
+                }
+            }) {
+                let target_path = path.replace_root(&source_path, target_path.clone());
+                self.block_visitor
+                    .bv
+                    .update_value_at(target_path, value.clone());
+            }
         }
+        self.use_entry_condition_as_exit_condition();
     }
 
     /// If the current call is to a well known function for which we don't have a cached summary,
@@ -540,22 +538,18 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                 return true;
             }
             KnownNames::MiraiResult => {
-                if let Some((place, _)) = &self.destination {
-                    let target_path = self.block_visitor.visit_rh_place(place);
-                    let target_rustc_type = self
-                        .type_visitor()
-                        .get_rustc_place_type(place, self.block_visitor.bv.current_span);
-                    let return_value_path = Path::new_result();
-                    let return_value = self
-                        .block_visitor
-                        .bv
-                        .lookup_path_and_refine_result(return_value_path, target_rustc_type);
-                    self.block_visitor
-                        .bv
-                        .update_value_at(target_path, return_value);
-                } else {
-                    assume_unreachable!();
-                }
+                let target_path = self.block_visitor.visit_rh_place(&self.destination);
+                let target_rustc_type = self
+                    .type_visitor()
+                    .get_rustc_place_type(&self.destination, self.block_visitor.bv.current_span);
+                let return_value_path = Path::new_result();
+                let return_value = self
+                    .block_visitor
+                    .bv
+                    .lookup_path_and_refine_result(return_value_path, target_rustc_type);
+                self.block_visitor
+                    .bv
+                    .update_value_at(target_path, return_value);
                 self.use_entry_condition_as_exit_condition();
                 return true;
             }
@@ -642,12 +636,10 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             _ => {
                 let result = self.try_to_inline_special_function();
                 if !result.is_bottom() {
-                    if let Some((place, _)) = &self.destination {
-                        let target_path = self.block_visitor.visit_lh_place(place);
-                        self.block_visitor.bv.update_value_at(target_path, result);
-                        self.use_entry_condition_as_exit_condition();
-                        return true;
-                    }
+                    let target_path = self.block_visitor.visit_lh_place(&self.destination);
+                    self.block_visitor.bv.update_value_at(target_path, result);
+                    self.use_entry_condition_as_exit_condition();
+                    return true;
                 }
             }
         }
@@ -668,76 +660,74 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                 if Some(def.variants()[variant_0].def_id)
                     == self.block_visitor.bv.tcx.lang_items().option_none_variant()
                 {
-                    if let Some((place, _)) = &self.destination {
-                        let target_path_discr =
-                            Path::new_discriminant(self.block_visitor.visit_rh_place(place));
-                        let arg0_discr_path = Path::new_discriminant(
-                            Path::new_deref(
-                                self.actual_args[0].0.clone(),
-                                ExpressionType::NonPrimitive,
-                            )
-                            .canonicalize(&self.block_visitor.bv.current_environment),
-                        );
-                        let discr_ty = t.discriminant_ty(self.block_visitor.bv.tcx);
-                        let discr_0_val = self.block_visitor.get_int_const_val(0, discr_ty);
-                        let discr_val = self
-                            .block_visitor
-                            .bv
-                            .lookup_path_and_refine_result(arg0_discr_path, discr_ty);
-                        let is_zero = discr_val.equals(discr_0_val.clone());
-                        let target_discr_value = match is_zero.as_bool_if_known() {
-                            Some(false) => {
-                                // Have to clone the Some(..) variant, let visit_caller take care of that
-                                return false;
-                            }
-                            Some(true) => {
-                                // Cloning is just copying the discriminant value
-                                discr_0_val
-                            }
-                            None => {
-                                // Might have to clone the Some(..) variant, so can't be handled here,
-                                if let Some(promotable_is_zero) =
-                                    is_zero.extract_promotable_disjuncts(false)
-                                {
-                                    // The caller might be able to avoid the diagnostic because it
-                                    // knows the actual argument whereas here we only know the type.
-                                    let specialized_substs = self.type_visitor().specialize_substs(
-                                        substs,
-                                        &self.callee_generic_argument_map,
-                                    );
-                                    if !utils::are_concrete(specialized_substs) {
-                                        // The clone method will not resolve, but we don't want visit_caller
-                                        // to issue a diagnostic because is_zero might refine to true
-                                        // further up the call stack. We deal with this by adding a
-                                        // precondition to the current function requiring that the
-                                        // caller (or on its callers) must ensure that is_zero will be true
-                                        // at runtime when this call is issued.
-                                        let precondition = Precondition {
+                    let target_path_discr = Path::new_discriminant(
+                        self.block_visitor.visit_rh_place(&self.destination),
+                    );
+                    let arg0_discr_path = Path::new_discriminant(
+                        Path::new_deref(
+                            self.actual_args[0].0.clone(),
+                            ExpressionType::NonPrimitive,
+                        )
+                        .canonicalize(&self.block_visitor.bv.current_environment),
+                    );
+                    let discr_ty = t.discriminant_ty(self.block_visitor.bv.tcx);
+                    let discr_0_val = self.block_visitor.get_int_const_val(0, discr_ty);
+                    let discr_val = self
+                        .block_visitor
+                        .bv
+                        .lookup_path_and_refine_result(arg0_discr_path, discr_ty);
+                    let is_zero = discr_val.equals(discr_0_val.clone());
+                    let target_discr_value = match is_zero.as_bool_if_known() {
+                        Some(false) => {
+                            // Have to clone the Some(..) variant, let visit_caller take care of that
+                            return false;
+                        }
+                        Some(true) => {
+                            // Cloning is just copying the discriminant value
+                            discr_0_val
+                        }
+                        None => {
+                            // Might have to clone the Some(..) variant, so can't be handled here,
+                            if let Some(promotable_is_zero) =
+                                is_zero.extract_promotable_disjuncts(false)
+                            {
+                                // The caller might be able to avoid the diagnostic because it
+                                // knows the actual argument whereas here we only know the type.
+                                let specialized_substs = self
+                                    .type_visitor()
+                                    .specialize_substs(substs, &self.callee_generic_argument_map);
+                                if !utils::are_concrete(specialized_substs) {
+                                    // The clone method will not resolve, but we don't want visit_caller
+                                    // to issue a diagnostic because is_zero might refine to true
+                                    // further up the call stack. We deal with this by adding a
+                                    // precondition to the current function requiring that the
+                                    // caller (or on its callers) must ensure that is_zero will be true
+                                    // at runtime when this call is issued.
+                                    let precondition = Precondition {
                                             condition: promotable_is_zero,
                                             message: Rc::from("incomplete analysis of call because of failure to resolve std::Clone::clone method"),
                                             provenance: None,
                                             spans: vec![self.block_visitor.bv.current_span.source_callsite()],
                                         };
-                                        self.block_visitor.bv.preconditions.push(precondition);
-                                        discr_0_val
-                                    } else {
-                                        // let visit_call issue a diagnostic
-                                        return false;
-                                    }
+                                    self.block_visitor.bv.preconditions.push(precondition);
+                                    discr_0_val
                                 } else {
-                                    // let visit_call resolve the clone method and deal with it
+                                    // let visit_call issue a diagnostic
                                     return false;
                                 }
+                            } else {
+                                // let visit_call resolve the clone method and deal with it
+                                return false;
                             }
-                        };
-                        self.block_visitor
-                            .bv
-                            .update_value_at(target_path_discr, target_discr_value);
-                        self.use_entry_condition_as_exit_condition();
-                        return true;
-                    } else {
-                        assume_unreachable!();
-                    }
+                        }
+                    };
+                    self.block_visitor
+                        .bv
+                        .update_value_at(target_path_discr, target_discr_value);
+                    self.use_entry_condition_as_exit_condition();
+                    return true;
+                } else {
+                    return false;
                 }
             }
         }
@@ -748,7 +738,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
     /// Such blocks, obviously, do not alter their entry path condition.
     #[logfn_inputs(TRACE)]
     fn use_entry_condition_as_exit_condition(&mut self) {
-        if let Some((_, target)) = &self.destination {
+        if let Some(target) = &self.target {
             let exit_condition = self
                 .block_visitor
                 .bv
@@ -1304,6 +1294,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             indirect_call_visitor.callee_fun_val = callee.clone();
             indirect_call_visitor.callee_known_name = KnownNames::None;
             indirect_call_visitor.destination = self.destination;
+            indirect_call_visitor.target = self.target;
             let summary = indirect_call_visitor.get_function_summary();
             if let Some(summary) = summary {
                 if summary.is_computed {
@@ -1339,11 +1330,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
     /// destination place.
     #[logfn_inputs(TRACE)]
     fn handle_abstract_value(&mut self) {
-        if let Some((place, target)) = &self.destination {
-            let path = self.block_visitor.visit_rh_place(place);
+        if let Some(target) = &self.target {
+            let path = self.block_visitor.visit_rh_place(&self.destination);
             let expression_type = self
                 .type_visitor()
-                .get_place_type(place, self.block_visitor.bv.current_span);
+                .get_place_type(&self.destination, self.block_visitor.bv.current_span);
             let abstract_value = AbstractValue::make_typed_unknown(expression_type, path.clone());
             self.block_visitor.bv.update_value_at(path, abstract_value);
             let exit_condition = self
@@ -1449,12 +1440,12 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                 .entry_condition
                 .and(assumed_condition)
         };
-        if let Some((_, target)) = &self.destination {
+        if let Some(target) = self.target {
             self.block_visitor
                 .bv
                 .current_environment
                 .exit_conditions
-                .insert_mut(*target, exit_condition);
+                .insert_mut(target, exit_condition);
         } else {
             assume_unreachable!();
         }
@@ -1617,18 +1608,13 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
         }
 
         // Return the abstract result and update exit conditions.
-        let destination = &self.destination;
-        if let Some((place, _)) = destination {
-            let target_path = self.block_visitor.visit_rh_place(place);
-            self.block_visitor.bv.update_value_at(
-                target_path.clone(),
-                result.unwrap_or_else(|| {
-                    AbstractValue::make_typed_unknown(ExpressionType::Bool, target_path)
-                }),
-            );
-        } else {
-            assume_unreachable!("expected the function call has a destination");
-        }
+        let target_path = self.block_visitor.visit_rh_place(&self.destination);
+        self.block_visitor.bv.update_value_at(
+            target_path.clone(),
+            result.unwrap_or_else(|| {
+                AbstractValue::make_typed_unknown(ExpressionType::Bool, target_path)
+            }),
+        );
         self.use_entry_condition_as_exit_condition();
     }
 
@@ -1727,81 +1713,76 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
     /// value if there is no field).
     #[logfn_inputs(TRACE)]
     fn handle_get_model_field(&mut self) {
-        let destination = self.destination;
-        if let Some((place, _)) = &destination {
-            let target_type = self
-                .type_visitor()
-                .get_rustc_place_type(place, self.block_visitor.bv.current_span);
-            checked_assume!(self.actual_args.len() == 3);
+        let target_type = self
+            .type_visitor()
+            .get_rustc_place_type(&self.destination, self.block_visitor.bv.current_span);
+        checked_assume!(self.actual_args.len() == 3);
 
-            // The current value, if any, of the model field are a set of (path, value) pairs
-            // where each path is rooted by qualifier.model_field(..)
-            let mut qualifier = self.actual_args[0].0.clone();
-            if matches!(&self.actual_argument_types[0].kind(), TyKind::Ref { .. }) {
-                let target_type = ExpressionType::from(
-                    self.type_visitor()
-                        .get_dereferenced_type(self.actual_argument_types[0])
-                        .kind(),
-                );
-                qualifier = Path::new_deref(qualifier, target_type);
-            }
-            let field_name = self.coerce_to_string(&self.actual_args[1].0.clone());
-            let source_path = Path::new_model_field(qualifier, field_name)
-                .canonicalize(&self.block_visitor.bv.current_environment);
+        // The current value, if any, of the model field are a set of (path, value) pairs
+        // where each path is rooted by qualifier.model_field(..)
+        let mut qualifier = self.actual_args[0].0.clone();
+        if matches!(&self.actual_argument_types[0].kind(), TyKind::Ref { .. }) {
+            let target_type = ExpressionType::from(
+                self.type_visitor()
+                    .get_dereferenced_type(self.actual_argument_types[0])
+                    .kind(),
+            );
+            qualifier = Path::new_deref(qualifier, target_type);
+        }
+        let field_name = self.coerce_to_string(&self.actual_args[1].0.clone());
+        let source_path = Path::new_model_field(qualifier, field_name)
+            .canonicalize(&self.block_visitor.bv.current_environment);
 
-            let target_path = self.block_visitor.visit_rh_place(place);
-            if self
-                .block_visitor
-                .bv
-                .current_environment
-                .value_at(&source_path)
-                .is_some()
-            {
-                // Move the model field (path, val) pairs to the target (i.e. the place where
-                // the return value of call to the mirai_get_model_field function would go if
-                // it were a normal call.
-                self.block_visitor.bv.copy_or_move_elements(
-                    target_path,
-                    source_path,
-                    target_type,
-                    true,
-                );
-            } else {
-                // If there is no value for the model field in the environment, we should
-                // use the default value, but only if the qualifier is not rooted in a parameter
-                // value since only the caller will know what the values of the fields are.
-                match &self.actual_args[0].1.expression {
-                    Expression::Reference(path)
-                    | Expression::InitialParameterValue { path, .. }
-                    | Expression::Variable { path, .. }
-                        if path.is_rooted_by_parameter() =>
-                    {
-                        //todo: if the default value is a non primitive then we lose the structure
-                        // using the code below. That is wrong. Generalize the default field.
-                        let rval = AbstractValue::make_from(
-                            Expression::UnknownModelField {
-                                path: source_path,
-                                default: self.actual_args[2].1.clone(),
-                            },
-                            1,
-                        );
-                        self.block_visitor.bv.update_value_at(target_path, rval);
-                    }
-                    _ => {
-                        let source_path = self.actual_args[2].0.clone();
-                        self.block_visitor.bv.copy_or_move_elements(
-                            target_path,
-                            source_path,
-                            target_type,
-                            true,
-                        );
-                    }
+        let target_path = self.block_visitor.visit_rh_place(&self.destination);
+        if self
+            .block_visitor
+            .bv
+            .current_environment
+            .value_at(&source_path)
+            .is_some()
+        {
+            // Move the model field (path, val) pairs to the target (i.e. the place where
+            // the return value of call to the mirai_get_model_field function would go if
+            // it were a normal call.
+            self.block_visitor.bv.copy_or_move_elements(
+                target_path,
+                source_path,
+                target_type,
+                true,
+            );
+        } else {
+            // If there is no value for the model field in the environment, we should
+            // use the default value, but only if the qualifier is not rooted in a parameter
+            // value since only the caller will know what the values of the fields are.
+            match &self.actual_args[0].1.expression {
+                Expression::Reference(path)
+                | Expression::InitialParameterValue { path, .. }
+                | Expression::Variable { path, .. }
+                    if path.is_rooted_by_parameter() =>
+                {
+                    //todo: if the default value is a non primitive then we lose the structure
+                    // using the code below. That is wrong. Generalize the default field.
+                    let rval = AbstractValue::make_from(
+                        Expression::UnknownModelField {
+                            path: source_path,
+                            default: self.actual_args[2].1.clone(),
+                        },
+                        1,
+                    );
+                    self.block_visitor.bv.update_value_at(target_path, rval);
+                }
+                _ => {
+                    let source_path = self.actual_args[2].0.clone();
+                    self.block_visitor.bv.copy_or_move_elements(
+                        target_path,
+                        source_path,
+                        target_type,
+                        true,
+                    );
                 }
             }
-            self.use_entry_condition_as_exit_condition();
-        } else {
-            assume_unreachable!();
         }
+        self.use_entry_condition_as_exit_condition();
     }
 
     fn handle_post_condition(&mut self) {
@@ -1813,7 +1794,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             .current_environment
             .entry_condition
             .and(condition);
-        if let Some((_, target)) = &self.destination {
+        if let Some(target) = &self.target {
             self.block_visitor
                 .bv
                 .current_environment
@@ -1854,7 +1835,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             .current_environment
             .entry_condition
             .clone();
-        if let Some((_, target)) = &self.destination {
+        if let Some(target) = &self.target {
             self.block_visitor
                 .bv
                 .current_environment
@@ -1888,28 +1869,25 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
     #[logfn_inputs(TRACE)]
     fn handle_set_model_field(&mut self) {
         checked_assume!(self.actual_args.len() == 3);
-        let destination = self.destination;
-        if let Some((_, target)) = &destination {
-            let mut qualifier = self.actual_args[0].0.clone();
-            if matches!(&self.actual_argument_types[0].kind(), TyKind::Ref { .. }) {
-                let target_type = ExpressionType::from(
-                    self.type_visitor()
-                        .get_dereferenced_type(self.actual_argument_types[0])
-                        .kind(),
-                );
-                qualifier = Path::new_deref(qualifier, target_type);
-            }
-            let field_name = self.coerce_to_string(&self.actual_args[1].0.clone());
-            let target_path = Path::new_model_field(qualifier, field_name)
-                .canonicalize(&self.block_visitor.bv.current_environment);
-            let source_path = self.actual_args[2].0.clone();
-            let target_type = self.actual_argument_types[2];
-            self.block_visitor.bv.copy_or_move_elements(
-                target_path,
-                source_path,
-                target_type,
-                true,
+
+        let mut qualifier = self.actual_args[0].0.clone();
+        if matches!(&self.actual_argument_types[0].kind(), TyKind::Ref { .. }) {
+            let target_type = ExpressionType::from(
+                self.type_visitor()
+                    .get_dereferenced_type(self.actual_argument_types[0])
+                    .kind(),
             );
+            qualifier = Path::new_deref(qualifier, target_type);
+        }
+        let field_name = self.coerce_to_string(&self.actual_args[1].0.clone());
+        let target_path = Path::new_model_field(qualifier, field_name)
+            .canonicalize(&self.block_visitor.bv.current_environment);
+        let source_path = self.actual_args[2].0.clone();
+        let target_type = self.actual_argument_types[2];
+        self.block_visitor
+            .bv
+            .copy_or_move_elements(target_path, source_path, target_type, true);
+        if let Some(target) = &self.target {
             let exit_condition = self
                 .block_visitor
                 .bv
@@ -1988,48 +1966,46 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
     #[logfn_inputs(TRACE)]
     fn handle_discriminant_value(&mut self) {
         checked_assume!(self.actual_args.len() == 1);
-        if let Some((place, _)) = &self.destination {
-            let target_type = ExpressionType::from(
-                self.type_visitor()
-                    .get_dereferenced_type(self.actual_argument_types[0])
-                    .kind(),
-            );
-            let discriminant_path =
-                Path::new_discriminant(Path::new_deref(self.actual_args[0].0.clone(), target_type))
-                    .canonicalize(&self.block_visitor.bv.current_environment);
-            let mut discriminant_value = self.block_visitor.bv.lookup_path_and_refine_result(
-                discriminant_path,
-                self.block_visitor.bv.tcx.types.u128,
-            );
-            // If `T` has no discriminant, return 0.
-            match self.callee_generic_arguments {
-                None => assume_unreachable!(
-                    "expected discriminant_value function call to have a generic argument"
-                ),
-                Some(rustc_gen_args) => {
-                    checked_assume!(rustc_gen_args.len() == 1);
-                    match rustc_gen_args[0].unpack() {
-                        GenericArgKind::Type(ty) => match ty.kind() {
-                            TyKind::Adt(def, _) if def.is_enum() => {}
-                            TyKind::Generator(..) => {}
-                            _ => {
-                                discriminant_value = Rc::new(ConstantDomain::U128(0).into());
-                            }
-                        },
+        let target_type = ExpressionType::from(
+            self.type_visitor()
+                .get_dereferenced_type(self.actual_argument_types[0])
+                .kind(),
+        );
+        let discriminant_path =
+            Path::new_discriminant(Path::new_deref(self.actual_args[0].0.clone(), target_type))
+                .canonicalize(&self.block_visitor.bv.current_environment);
+        let mut discriminant_value = self
+            .block_visitor
+            .bv
+            .lookup_path_and_refine_result(discriminant_path, self.block_visitor.bv.tcx.types.u128);
+        // If `T` has no discriminant, return 0.
+        match self.callee_generic_arguments {
+            None => assume_unreachable!(
+                "expected discriminant_value function call to have a generic argument"
+            ),
+            Some(rustc_gen_args) => {
+                checked_assume!(rustc_gen_args.len() == 1);
+                match rustc_gen_args[0].unpack() {
+                    GenericArgKind::Type(ty) => match ty.kind() {
+                        TyKind::Adt(def, _) if def.is_enum() => {}
+                        TyKind::Generator(..) => {}
                         _ => {
-                            // The rust type checker should ensure that the generic argument is a type.
-                            assume_unreachable!(
+                            discriminant_value = Rc::new(ConstantDomain::U128(0).into());
+                        }
+                    },
+                    _ => {
+                        // The rust type checker should ensure that the generic argument is a type.
+                        assume_unreachable!(
                             "expected the generic argument of discriminant_value function calls to be a type"
                         );
-                        }
                     }
                 }
             }
-            let target_path = self.block_visitor.visit_rh_place(place);
-            self.block_visitor
-                .bv
-                .update_value_at(target_path, discriminant_value);
         }
+        let target_path = self.block_visitor.visit_rh_place(&self.destination);
+        self.block_visitor
+            .bv
+            .update_value_at(target_path, discriminant_value);
         self.use_entry_condition_as_exit_condition();
     }
 
@@ -2065,12 +2041,9 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
         checked_assume!(self.actual_args.len() == 2);
         let length = self.actual_args[0].1.clone();
         let alignment = self.actual_args[1].1.clone();
-        let ty = if let Some((place, _)) = &self.destination {
-            self.type_visitor()
-                .get_rustc_place_type(place, self.block_visitor.bv.current_span)
-        } else {
-            assume_unreachable!("call to alloc::alloc::__rust_alloc without return value place");
-        };
+        let ty = self
+            .type_visitor()
+            .get_rustc_place_type(&self.destination, self.block_visitor.bv.current_span);
         let (_, heap_path) = self
             .block_visitor
             .bv
@@ -2084,14 +2057,9 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
         checked_assume!(self.actual_args.len() == 2);
         let length = self.actual_args[0].1.clone();
         let alignment = self.actual_args[1].1.clone();
-        let ty = if let Some((place, _)) = &self.destination {
-            self.type_visitor()
-                .get_rustc_place_type(place, self.block_visitor.bv.current_span)
-        } else {
-            assume_unreachable!(
-                "call to alloc::alloc::__rust_alloc_zeroed without return value place"
-            );
-        };
+        let ty = self
+            .type_visitor()
+            .get_rustc_place_type(&self.destination, self.block_visitor.bv.current_span);
         let (_, heap_path) = self
             .block_visitor
             .bv
@@ -2168,40 +2136,35 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
     #[logfn_inputs(TRACE)]
     fn handle_checked_binary_operation(&mut self) -> Rc<AbstractValue> {
         checked_assume!(self.actual_args.len() == 2);
-        if let Some((target_place, _)) = &self.destination {
-            let bin_op = match self.callee_known_name {
-                KnownNames::StdIntrinsicsMulWithOverflow => mir::BinOp::Mul,
-                _ => assume_unreachable!(),
-            };
-            let target_path = self.block_visitor.visit_rh_place(target_place);
-            let path0 = Path::new_field(target_path.clone(), 0);
-            let path1 = Path::new_field(target_path.clone(), 1);
-            let target_type = self
-                .type_visitor()
-                .get_target_path_type(&path0, self.block_visitor.bv.current_span);
-            let left = self.actual_args[0].1.clone();
-            let right = self.actual_args[1].1.clone();
-            let modulo = target_type.modulo_value();
-            let (result, overflow_flag) =
-                BlockVisitor::do_checked_binary_op(bin_op, target_type, left, right);
-            let (modulo_result, overflow_flag) = if !modulo.is_bottom() {
-                (result.remainder(target_type.modulo_value()), overflow_flag)
-            } else {
-                // todo: figure out an expression that represents the truncated overflow of a
-                // signed operation.
-                let unknown_typed_value =
-                    AbstractValue::make_typed_unknown(target_type, path0.clone());
-                (
-                    overflow_flag.conditional_expression(unknown_typed_value, result),
-                    overflow_flag,
-                )
-            };
-            self.block_visitor.bv.update_value_at(path0, modulo_result);
-            self.block_visitor.bv.update_value_at(path1, overflow_flag);
-            AbstractValue::make_typed_unknown(target_type, target_path)
+        let bin_op = match self.callee_known_name {
+            KnownNames::StdIntrinsicsMulWithOverflow => mir::BinOp::Mul,
+            _ => assume_unreachable!(),
+        };
+        let target_path = self.block_visitor.visit_rh_place(&self.destination);
+        let path0 = Path::new_field(target_path.clone(), 0);
+        let path1 = Path::new_field(target_path.clone(), 1);
+        let target_type = self
+            .type_visitor()
+            .get_target_path_type(&path0, self.block_visitor.bv.current_span);
+        let left = self.actual_args[0].1.clone();
+        let right = self.actual_args[1].1.clone();
+        let modulo = target_type.modulo_value();
+        let (result, overflow_flag) =
+            BlockVisitor::do_checked_binary_op(bin_op, target_type, left, right);
+        let (modulo_result, overflow_flag) = if !modulo.is_bottom() {
+            (result.remainder(target_type.modulo_value()), overflow_flag)
         } else {
-            assume_unreachable!();
-        }
+            // todo: figure out an expression that represents the truncated overflow of a
+            // signed operation.
+            let unknown_typed_value = AbstractValue::make_typed_unknown(target_type, path0.clone());
+            (
+                overflow_flag.conditional_expression(unknown_typed_value, result),
+                overflow_flag,
+            )
+        };
+        self.block_visitor.bv.update_value_at(path0, modulo_result);
+        self.block_visitor.bv.update_value_at(path1, overflow_flag);
+        AbstractValue::make_typed_unknown(target_type, target_path)
     }
 
     /// If `ty.needs_drop(...)` returns `true`, then `ty` is definitely
@@ -2252,26 +2215,24 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
         let dest_path = Path::new_deref(self.actual_args[0].0.clone(), target_type)
             .canonicalize(&self.block_visitor.bv.current_environment);
         let source_path = &self.actual_args[1].0;
-        if let Some((place, _)) = &self.destination {
-            let target_path = self.block_visitor.visit_rh_place(place);
-            let root_rustc_type = self
-                .type_visitor()
-                .get_rustc_place_type(place, self.block_visitor.bv.current_span);
-            // Return the old value of dest_path
-            self.block_visitor.bv.copy_or_move_elements(
-                target_path,
-                dest_path.clone(),
-                root_rustc_type,
-                true,
-            );
-            // Move value at source path into dest path
-            self.block_visitor.bv.copy_or_move_elements(
-                dest_path,
-                source_path.clone(),
-                root_rustc_type,
-                true,
-            );
-        }
+        let target_path = self.block_visitor.visit_rh_place(&self.destination);
+        let root_rustc_type = self
+            .type_visitor()
+            .get_rustc_place_type(&self.destination, self.block_visitor.bv.current_span);
+        // Return the old value of dest_path
+        self.block_visitor.bv.copy_or_move_elements(
+            target_path,
+            dest_path.clone(),
+            root_rustc_type,
+            true,
+        );
+        // Move value at source path into dest path
+        self.block_visitor.bv.copy_or_move_elements(
+            dest_path,
+            source_path.clone(),
+            root_rustc_type,
+            true,
+        );
         self.use_entry_condition_as_exit_condition();
     }
 
@@ -2290,12 +2251,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                 return Rc::new((ty_and_layout.layout.size().bytes() as u128).into());
             }
         }
-        let path = self.block_visitor.visit_rh_place(
-            &self
-                .destination
-                .expect("std::intrinsics::size_of should have a destination")
-                .0,
-        );
+        let path = self.block_visitor.visit_rh_place(&self.destination);
         AbstractValue::make_typed_unknown(ExpressionType::U128, path)
     }
 
@@ -2334,12 +2290,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             return Rc::new((ty_and_layout.layout.align().abi.bytes() as u128).into());
         }
         // todo: need an expression that resolves to the value size once the value is known (typically after call site refinement).
-        let path = self.block_visitor.visit_rh_place(
-            &self
-                .destination
-                .expect("std::intrinsics::min_align_of_val should have a destination")
-                .0,
-        );
+        let path = self.block_visitor.visit_rh_place(&self.destination);
         AbstractValue::make_typed_unknown(ExpressionType::U128, path)
     }
 
@@ -2392,12 +2343,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             }
         }
         // todo: need an expression that resolves to the value size once the value is known (typically after call site refinement).
-        let path = self.block_visitor.visit_rh_place(
-            &self
-                .destination
-                .expect("std::intrinsics::size_of_value should have a destination")
-                .0,
-        );
+        let path = self.block_visitor.visit_rh_place(&self.destination);
         AbstractValue::make_typed_unknown(ExpressionType::U128, path)
     }
 
@@ -2420,18 +2366,16 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             .get(0)
             .expect("rustc type error")
             .expect_ty();
-        if let Some((place, _)) = &self.destination {
-            let target_path = self.block_visitor.visit_rh_place(place);
-            let target_rustc_type = self
-                .type_visitor()
-                .get_rustc_place_type(place, self.block_visitor.bv.current_span);
-            self.block_visitor.bv.copy_and_transmute(
-                source_path,
-                source_rustc_type,
-                target_path,
-                target_rustc_type,
-            );
-        }
+        let target_path = self.block_visitor.visit_rh_place(&self.destination);
+        let target_rustc_type = self
+            .type_visitor()
+            .get_rustc_place_type(&self.destination, self.block_visitor.bv.current_span);
+        self.block_visitor.bv.copy_and_transmute(
+            source_path,
+            source_rustc_type,
+            target_path,
+            target_rustc_type,
+        );
         self.use_entry_condition_as_exit_condition();
     }
 
@@ -2650,9 +2594,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
         verify!(self.block_visitor.bv.check_for_errors);
         // A precondition can refer to the result if the precondition prevents the result expression
         // from overflowing.
-        let result = self
-            .destination
-            .map(|(r, _)| self.block_visitor.visit_rh_place(&r));
+        let result = Some(self.block_visitor.visit_rh_place(&self.destination));
         for precondition in &function_summary.preconditions {
             let mut refined_condition = precondition.condition.refine_parameters_and_paths(
                 &self.actual_args,
@@ -2890,100 +2832,97 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
     /// current state.
     #[logfn_inputs(TRACE)]
     pub fn transfer_and_refine_normal_return_state(&mut self, function_summary: &Summary) {
-        let destination = self.destination;
-        if let Some((place, _)) = &destination {
-            // Assign function result to place
-            let target_path = self.block_visitor.visit_rh_place(place);
-            let result_path = &Some(target_path.clone());
-            // If the summary has a concrete type for the return result, use that type rather
-            // than the possibly abstract type of the target path.
-            let result_type = self
-                .type_visitor()
-                .get_type_from_index(function_summary.return_type_index);
-            if !result_type.is_never() {
-                self.type_visitor_mut()
-                    .set_path_rustc_type(target_path.clone(), result_type);
-            }
-            let return_value_path = Path::new_result();
+        // Assign function result to place
+        let target_path = self.block_visitor.visit_rh_place(&self.destination);
+        let result_path = &Some(target_path.clone());
+        // If the summary has a concrete type for the return result, use that type rather
+        // than the possibly abstract type of the target path.
+        let result_type = self
+            .type_visitor()
+            .get_type_from_index(function_summary.return_type_index);
+        if !result_type.is_never() {
+            self.type_visitor_mut()
+                .set_path_rustc_type(target_path.clone(), result_type);
+        }
+        let return_value_path = Path::new_result();
 
-            let mut pre_environment = self.environment_before_call.clone();
-            // Transfer side effects
-            if function_summary.is_computed && !function_summary.is_incomplete {
-                // Effects on the heap
-                for (path, value) in function_summary.side_effects.iter() {
-                    if path.is_rooted_by_non_local_structure() {
-                        let rvalue = value.clone().refine_parameters_and_paths(
-                            &self.actual_args,
-                            result_path,
-                            &self.environment_before_call,
-                            &self.block_visitor.bv.current_environment,
-                            self.block_visitor.bv.fresh_variable_offset,
+        let mut pre_environment = self.environment_before_call.clone();
+        // Transfer side effects
+        if function_summary.is_computed && !function_summary.is_incomplete {
+            // Effects on the heap
+            for (path, value) in function_summary.side_effects.iter() {
+                if path.is_rooted_by_non_local_structure() {
+                    let rvalue = value.clone().refine_parameters_and_paths(
+                        &self.actual_args,
+                        result_path,
+                        &self.environment_before_call,
+                        &self.block_visitor.bv.current_environment,
+                        self.block_visitor.bv.fresh_variable_offset,
+                    );
+                    let rpath = path.refine_parameters_and_paths(
+                        &self.actual_args,
+                        result_path,
+                        &self.environment_before_call,
+                        &self.block_visitor.bv.current_environment,
+                        self.block_visitor.bv.fresh_variable_offset,
+                    );
+                    if rvalue.expression.infer_type() == ExpressionType::NonPrimitive {
+                        let source_path = Path::get_as_path(rvalue.clone());
+                        let source_type = self
+                            .block_visitor
+                            .bv
+                            .type_visitor()
+                            .get_path_rustc_type(&source_path, self.block_visitor.bv.current_span);
+                        self.block_visitor.bv.copy_or_move_elements(
+                            rpath.clone(),
+                            source_path,
+                            source_type,
+                            false,
                         );
-                        let rpath = path.refine_parameters_and_paths(
-                            &self.actual_args,
-                            result_path,
-                            &self.environment_before_call,
-                            &self.block_visitor.bv.current_environment,
-                            self.block_visitor.bv.fresh_variable_offset,
-                        );
-                        if rvalue.expression.infer_type() == ExpressionType::NonPrimitive {
-                            let source_path = Path::get_as_path(rvalue.clone());
-                            let source_type =
-                                self.block_visitor.bv.type_visitor().get_path_rustc_type(
-                                    &source_path,
-                                    self.block_visitor.bv.current_span,
-                                );
-                            self.block_visitor.bv.copy_or_move_elements(
-                                rpath.clone(),
-                                source_path,
-                                source_type,
-                                false,
-                            );
-                        } else {
-                            self.block_visitor
-                                .bv
-                                .update_value_at(rpath.clone(), rvalue.clone());
-                        }
-                        pre_environment.strong_update_value_at(rpath, rvalue);
+                    } else {
+                        self.block_visitor
+                            .bv
+                            .update_value_at(rpath.clone(), rvalue.clone());
                     }
-                    check_for_early_return!(self.block_visitor.bv);
+                    pre_environment.strong_update_value_at(rpath, rvalue);
                 }
+                check_for_early_return!(self.block_visitor.bv);
+            }
 
-                // Effects on the call result
+            // Effects on the call result
+            self.block_visitor.bv.transfer_and_refine(
+                &function_summary.side_effects,
+                target_path,
+                &return_value_path,
+                result_path,
+                &self.actual_args,
+                &pre_environment,
+            );
+
+            // Effects on the call arguments
+            for (i, (target_path, _)) in self.actual_args.iter().enumerate() {
+                let parameter_path = Path::new_parameter(i + 1);
                 self.block_visitor.bv.transfer_and_refine(
                     &function_summary.side_effects,
-                    target_path,
-                    &return_value_path,
+                    target_path.clone(),
+                    &parameter_path,
                     result_path,
                     &self.actual_args,
                     &pre_environment,
                 );
-
-                // Effects on the call arguments
-                for (i, (target_path, _)) in self.actual_args.iter().enumerate() {
-                    let parameter_path = Path::new_parameter(i + 1);
-                    self.block_visitor.bv.transfer_and_refine(
-                        &function_summary.side_effects,
-                        target_path.clone(),
-                        &parameter_path,
-                        result_path,
-                        &self.actual_args,
-                        &pre_environment,
-                    );
-                    check_for_early_return!(self.block_visitor.bv);
-                }
-            } else {
-                // We don't know anything other than the return value type.
-                // We'll assume there were no side effects and no preconditions.
-                let args = self.actual_args.iter().map(|(_, a)| a.clone()).collect();
-                let result_type = self
-                    .type_visitor()
-                    .get_place_type(place, self.block_visitor.bv.current_span);
-                let result =
-                    self.callee_fun_val
-                        .uninterpreted_call(args, result_type, return_value_path);
-                self.block_visitor.bv.update_value_at(target_path, result);
+                check_for_early_return!(self.block_visitor.bv);
             }
+        } else {
+            // We don't know anything other than the return value type.
+            // We'll assume there were no side effects and no preconditions.
+            let args = self.actual_args.iter().map(|(_, a)| a.clone()).collect();
+            let result_type = self
+                .type_visitor()
+                .get_place_type(&self.destination, self.block_visitor.bv.current_span);
+            let result =
+                self.callee_fun_val
+                    .uninterpreted_call(args, result_type, return_value_path);
+            self.block_visitor.bv.update_value_at(target_path, result);
         }
     }
 
@@ -2995,9 +2934,8 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
     /// call to function that is summarized by function_summary.
     #[logfn_inputs(TRACE)]
     pub fn add_post_condition_to_exit_conditions(&mut self, function_summary: &Summary) {
-        let destination = self.destination;
-        if let Some((place, target)) = &destination {
-            let target_path = self.block_visitor.visit_lh_place(place);
+        if let Some(target) = &self.target {
+            let target_path = self.block_visitor.visit_lh_place(&self.destination);
             let result_path = &Some(target_path);
             let mut exit_condition = self
                 .block_visitor

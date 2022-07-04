@@ -1133,14 +1133,9 @@ impl Z3Solver {
             Expression::TaggedExpression { operand, .. } => {
                 self.get_as_numeric_z3_ast(&operand.expression)
             }
-            Expression::Transmute { target_type, .. } => unsafe {
-                let sym = self.get_symbol_for(expression);
-                let sort = self.get_sort_for(*target_type);
-                (
-                    target_type.is_floating_point_number(),
-                    z3_sys::Z3_mk_const(self.z3_context, sym, sort),
-                )
-            },
+            Expression::Transmute { operand, .. } => {
+                self.get_as_numeric_z3_ast(&operand.expression)
+            }
             Expression::Top | Expression::Bottom => unsafe {
                 (
                     false,

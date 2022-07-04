@@ -79,7 +79,7 @@ pub struct Options {
 }
 
 /// Represents diag level.
-#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd)]
 pub enum DiagLevel {
     /// When a function calls a function without a body and with no foreign function summary, the call assumed to be
     /// correct and any diagnostics that depend on the result of the call in some way are suppressed.
