@@ -180,14 +180,13 @@ fn generate_call_graph_config(file_name: &str, temp_dir_path: &str) -> (CallGrap
     let test_case_data =
         fs::read_to_string(Path::new(&file_name)).expect("Failed to read test case");
     let config_regex = Regex::new(r"(/\* CONFIG)([\S\s]*?)(\*/)").unwrap();
-    let call_graph_test_config: CallGraphTestConfig = if let Some(captures) =
-        config_regex.captures(&test_case_data)
-    {
-        assume!(captures.len() == 4);
-        serde_json::from_str(&captures[2].to_owned()).expect("Failed to deserialize test config")
-    } else {
-        unrecoverable!("Could not find a call graph config in test file");
-    };
+    let call_graph_test_config: CallGraphTestConfig =
+        if let Some(captures) = config_regex.captures(&test_case_data) {
+            assume!(captures.len() == 4);
+            serde_json::from_str(&captures[2]).expect("Failed to deserialize test config")
+        } else {
+            unrecoverable!("Could not find a call graph config in test file");
+        };
     let datalog_path = match call_graph_test_config.datalog_config.datalog_backend {
         DatalogBackend::DifferentialDatalog => {
             format!("{}/graph.dat", temp_dir_path).into_boxed_str()
@@ -341,7 +340,7 @@ fn compare_lines(actual: &str, expected: &str) -> bool {
 }
 
 // Checked call graph output types
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 enum CallGraphOutputType {
     CallSites,
     Dot,

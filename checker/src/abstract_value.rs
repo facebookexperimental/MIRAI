@@ -2436,6 +2436,13 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     .collect(),
                 default.dereference(target_type),
             ),
+            Expression::Transmute {
+                operand,
+                target_type: var_type,
+            } => AbstractValue::make_typed_unknown(
+                target_type,
+                Path::new_deref(Path::get_as_path(operand.clone()), *var_type),
+            ),
             Expression::UninterpretedCall {
                 path,
                 result_type: var_type,
@@ -2667,6 +2674,19 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                         .conditional_expression(self.equals(v1.clone()), self.equals(v2.clone()));
                 }
             }
+            // [0 == transmute(x, thin pointer)] -> 0 == x
+            (
+                Expression::CompileTimeConstant(ConstantDomain::U128(val)),
+                Expression::Transmute {
+                    operand,
+                    target_type,
+                },
+            ) => {
+                if *val == 0 && *target_type == ExpressionType::ThinPointer {
+                    return self.equals(operand.clone());
+                }
+            }
+
             // [0 == !x] -> x when x is Boolean. Canonicalize it to the latter.
             (
                 Expression::CompileTimeConstant(ConstantDomain::U128(val)),

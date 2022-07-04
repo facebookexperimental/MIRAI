@@ -284,10 +284,19 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 func,
                 args,
                 destination,
+                target,
                 cleanup,
                 from_hir_call,
                 fn_span,
-            } => self.visit_call(func, args, destination, *cleanup, *from_hir_call, fn_span),
+            } => self.visit_call(
+                func,
+                args,
+                *destination,
+                *target,
+                *cleanup,
+                *from_hir_call,
+                fn_span,
+            ),
             mir::TerminatorKind::Assert {
                 cond,
                 expected,
@@ -500,9 +509,6 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 self.bv.assume_preconditions_of_next_call = saved_assume_preconditions_of_next_call
                     || self.bv.cv.options.diag_level != DiagLevel::Paranoid;
 
-                // We need a place, but the drop statement does not provide one, so we use the
-                // local being dropped as the return result.
-                let destination = Some((*place, target));
                 let mut call_visitor = CallVisitor::new(
                     self,
                     destructor.did,
@@ -514,7 +520,10 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 call_visitor.actual_args = actual_args;
                 call_visitor.actual_argument_types = actual_argument_types;
                 call_visitor.cleanup = unwind;
-                call_visitor.destination = destination;
+                // We need a destination, but the drop statement does not provide one, so we use the
+                // local being dropped as the destination.
+                call_visitor.destination = *place;
+                call_visitor.target = Some(target);
                 call_visitor.callee_fun_val = func_to_call;
                 call_visitor.function_constant_args = &function_constant_args;
 
@@ -553,12 +562,14 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
     /// * `cleanup` - Cleanups to be done if the call unwinds.
     /// * `from_hir_call` - Whether this is from a call in HIR, rather than from an overloaded
     /// operator. True for overloaded function call.
+    #[allow(clippy::too_many_arguments)]
     #[logfn_inputs(TRACE)]
     fn visit_call(
         &mut self,
         func: &mir::Operand<'tcx>,
         args: &[mir::Operand<'tcx>],
-        destination: &Option<(mir::Place<'tcx>, mir::BasicBlock)>,
+        destination: mir::Place<'tcx>,
+        target: Option<mir::BasicBlock>,
         cleanup: Option<mir::BasicBlock>,
         from_hir_call: bool,
         fn_span: &rustc_span::Span,
@@ -694,7 +705,8 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         call_visitor.actual_args = actual_args;
         call_visitor.actual_argument_types = actual_argument_types;
         call_visitor.cleanup = cleanup;
-        call_visitor.destination = *destination;
+        call_visitor.destination = destination;
+        call_visitor.target = target;
         call_visitor.callee_fun_val = func_to_call;
         call_visitor.function_constant_args = func_const_args;
         call_visitor.initial_type_cache = adt_map;
@@ -2334,7 +2346,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
 
     /// Transmutes a `*mut u8` into shallow-initialized `Box<T>`.
     ///
-    /// This is different a normal transmute because dataflow analysis will treat the box
+    /// This is different from a normal transmute because dataflow analysis will treat the box
     /// as initialized but its content as uninitialized.
     #[logfn_inputs(TRACE)]
     fn visit_shallow_init_box(

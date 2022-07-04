@@ -82,30 +82,30 @@ insert Edge(2,0,3);
 insert Edge(3,0,4);
 insert EdgeType(0,0);
 insert EdgeType(1,6);
-insert EdgeType(2,26);
-insert EdgeType(3,44);
-insert EqType(0,47);
+insert EdgeType(2,27);
+insert EdgeType(3,45);
 insert EqType(0,48);
+insert EqType(0,49);
 insert EqType(0,6);
-insert EqType(26,44);
-insert EqType(26,46);
-insert EqType(46,44);
-insert EqType(48,47);
-insert EqType(6,47);
+insert EqType(27,45);
+insert EqType(27,47);
+insert EqType(47,45);
+insert EqType(49,48);
 insert EqType(6,48);
-insert Member(26,0);
-insert Member(26,47);
-insert Member(26,48);
-insert Member(26,6);
-insert Member(44,0);
-insert Member(44,47);
-insert Member(44,48);
-insert Member(44,6);
-insert Member(45,46);
-insert Member(46,0);
+insert EqType(6,49);
+insert Member(27,0);
+insert Member(27,48);
+insert Member(27,49);
+insert Member(27,6);
+insert Member(45,0);
+insert Member(45,48);
+insert Member(45,49);
+insert Member(45,6);
 insert Member(46,47);
-insert Member(46,48);
-insert Member(46,6);
+insert Member(47,0);
+insert Member(47,48);
+insert Member(47,49);
+insert Member(47,6);
 commit;
 */
 
@@ -113,44 +113,44 @@ commit;
 {
   "0": "&Foo",
   "6": "&mut Foo",
-  "26": "&[Foo]",
-  "44": "std::vec::Vec<Foo>",
-  "45": "Bar",
-  "46": "[test::Foo]",
-  "47": "test::Foo",
-  "48": "Foo"
+  "27": "&[Foo]",
+  "45": "std::vec::Vec<Foo>",
+  "46": "Bar",
+  "47": "[test::Foo]",
+  "48": "test::Foo",
+  "49": "Foo"
 }
 */
 
 /* EXPECTED:CALL_SITES{
   "files": [
     "tests/call_graph/type_relations.rs",
-    "/rustc/4c5f6e6277b89e47d73a192078697f7a5f3dc0ac/library/core/src/fmt/builders.rs",
-    "/rustc/4c5f6e6277b89e47d73a192078697f7a5f3dc0ac/library/core/src/fmt/mod.rs",
-    "/rustc/4c5f6e6277b89e47d73a192078697f7a5f3dc0ac/library/core/src/slice/mod.rs",
-    "/rustc/4c5f6e6277b89e47d73a192078697f7a5f3dc0ac/library/core/src/slice/iter/macros.rs",
-    "/rustc/4c5f6e6277b89e47d73a192078697f7a5f3dc0ac/library/alloc/src/vec/mod.rs",
-    "/rustc/4c5f6e6277b89e47d73a192078697f7a5f3dc0ac/library/std/src/io/stdio.rs",
-    "/rustc/4c5f6e6277b89e47d73a192078697f7a5f3dc0ac/library/core/src/mem/valid_align.rs",
-    "/rustc/4c5f6e6277b89e47d73a192078697f7a5f3dc0ac/library/core/src/num/nonzero.rs",
-    "/rustc/4c5f6e6277b89e47d73a192078697f7a5f3dc0ac/library/core/src/ptr/mod.rs",
-    "/rustc/4c5f6e6277b89e47d73a192078697f7a5f3dc0ac/library/core/src/ptr/metadata.rs",
-    "/rustc/4c5f6e6277b89e47d73a192078697f7a5f3dc0ac/library/core/src/ptr/const_ptr.rs",
-    "/rustc/4c5f6e6277b89e47d73a192078697f7a5f3dc0ac/library/core/src/ptr/mut_ptr.rs",
-    "/rustc/4c5f6e6277b89e47d73a192078697f7a5f3dc0ac/library/core/src/ptr/non_null.rs",
-    "/rustc/4c5f6e6277b89e47d73a192078697f7a5f3dc0ac/library/core/src/ptr/unique.rs",
-    "/rustc/4c5f6e6277b89e47d73a192078697f7a5f3dc0ac/library/core/src/intrinsics.rs",
-    "/rustc/4c5f6e6277b89e47d73a192078697f7a5f3dc0ac/library/core/src/result.rs",
-    "/rustc/4c5f6e6277b89e47d73a192078697f7a5f3dc0ac/library/core/src/convert/mod.rs",
-    "/rustc/4c5f6e6277b89e47d73a192078697f7a5f3dc0ac/library/core/src/slice/iter.rs",
-    "/rustc/4c5f6e6277b89e47d73a192078697f7a5f3dc0ac/library/core/src/mem/mod.rs",
-    "/rustc/4c5f6e6277b89e47d73a192078697f7a5f3dc0ac/library/core/src/slice/raw.rs",
-    "/rustc/4c5f6e6277b89e47d73a192078697f7a5f3dc0ac/library/core/src/alloc/layout.rs",
-    "/rustc/4c5f6e6277b89e47d73a192078697f7a5f3dc0ac/library/alloc/src/slice.rs",
-    "/rustc/4c5f6e6277b89e47d73a192078697f7a5f3dc0ac/library/alloc/src/alloc.rs",
-    "/rustc/4c5f6e6277b89e47d73a192078697f7a5f3dc0ac/library/alloc/src/raw_vec.rs",
-    "/rustc/4c5f6e6277b89e47d73a192078697f7a5f3dc0ac/library/alloc/src/boxed.rs",
-    "/rustc/4c5f6e6277b89e47d73a192078697f7a5f3dc0ac/library/core/src/mem/manually_drop.rs"
+    "/rustc/1fede1753c33f4ce0660ad9b8edbd618d9733daf/library/core/src/fmt/builders.rs",
+    "/rustc/1fede1753c33f4ce0660ad9b8edbd618d9733daf/library/core/src/fmt/mod.rs",
+    "/rustc/1fede1753c33f4ce0660ad9b8edbd618d9733daf/library/core/src/slice/mod.rs",
+    "/rustc/1fede1753c33f4ce0660ad9b8edbd618d9733daf/library/core/src/slice/iter/macros.rs",
+    "/rustc/1fede1753c33f4ce0660ad9b8edbd618d9733daf/library/alloc/src/vec/mod.rs",
+    "/rustc/1fede1753c33f4ce0660ad9b8edbd618d9733daf/library/std/src/io/stdio.rs",
+    "/rustc/1fede1753c33f4ce0660ad9b8edbd618d9733daf/library/core/src/mem/valid_align.rs",
+    "/rustc/1fede1753c33f4ce0660ad9b8edbd618d9733daf/library/core/src/num/nonzero.rs",
+    "/rustc/1fede1753c33f4ce0660ad9b8edbd618d9733daf/library/core/src/ptr/mod.rs",
+    "/rustc/1fede1753c33f4ce0660ad9b8edbd618d9733daf/library/core/src/ptr/metadata.rs",
+    "/rustc/1fede1753c33f4ce0660ad9b8edbd618d9733daf/library/core/src/ptr/const_ptr.rs",
+    "/rustc/1fede1753c33f4ce0660ad9b8edbd618d9733daf/library/core/src/ptr/mut_ptr.rs",
+    "/rustc/1fede1753c33f4ce0660ad9b8edbd618d9733daf/library/core/src/ptr/non_null.rs",
+    "/rustc/1fede1753c33f4ce0660ad9b8edbd618d9733daf/library/core/src/ptr/unique.rs",
+    "/rustc/1fede1753c33f4ce0660ad9b8edbd618d9733daf/library/core/src/intrinsics.rs",
+    "/rustc/1fede1753c33f4ce0660ad9b8edbd618d9733daf/library/core/src/result.rs",
+    "/rustc/1fede1753c33f4ce0660ad9b8edbd618d9733daf/library/core/src/convert/mod.rs",
+    "/rustc/1fede1753c33f4ce0660ad9b8edbd618d9733daf/library/core/src/slice/iter.rs",
+    "/rustc/1fede1753c33f4ce0660ad9b8edbd618d9733daf/library/core/src/mem/mod.rs",
+    "/rustc/1fede1753c33f4ce0660ad9b8edbd618d9733daf/library/core/src/slice/raw.rs",
+    "/rustc/1fede1753c33f4ce0660ad9b8edbd618d9733daf/library/core/src/alloc/layout.rs",
+    "/rustc/1fede1753c33f4ce0660ad9b8edbd618d9733daf/library/alloc/src/slice.rs",
+    "/rustc/1fede1753c33f4ce0660ad9b8edbd618d9733daf/library/alloc/src/alloc.rs",
+    "/rustc/1fede1753c33f4ce0660ad9b8edbd618d9733daf/library/alloc/src/raw_vec.rs",
+    "/rustc/1fede1753c33f4ce0660ad9b8edbd618d9733daf/library/alloc/src/boxed.rs",
+    "/rustc/1fede1753c33f4ce0660ad9b8edbd618d9733daf/library/core/src/mem/manually_drop.rs"
   ],
   "callables": [
     {
@@ -192,7 +192,7 @@ commit;
     {
       "name": "core.slice.implement.iter",
       "file_index": 3,
-      "first_line": 732,
+      "first_line": 734,
       "local": true
     },
     {
@@ -210,7 +210,7 @@ commit;
     {
       "name": "alloc.vec.implement_alloc_vec_Vec_generic_par_T_generic_par_A.drop",
       "file_index": 5,
-      "first_line": 2876,
+      "first_line": 2879,
       "local": true
     },
     {
@@ -252,37 +252,31 @@ commit;
     {
       "name": "core.ptr.null",
       "file_index": 9,
-      "first_line": 510,
-      "local": true
-    },
-    {
-      "name": "core.ptr.invalid",
-      "file_index": 9,
-      "first_line": 556,
-      "local": true
-    },
-    {
-      "name": "core.ptr.null_mut",
-      "file_index": 9,
-      "first_line": 530,
-      "local": true
-    },
-    {
-      "name": "core.ptr.invalid_mut",
-      "file_index": 9,
-      "first_line": 583,
-      "local": true
-    },
-    {
-      "name": "core.ptr.slice_from_raw_parts",
-      "file_index": 9,
-      "first_line": 683,
+      "first_line": 533,
       "local": true
     },
     {
       "name": "core.ptr.metadata.from_raw_parts",
       "file_index": 10,
       "first_line": 110,
+      "local": true
+    },
+    {
+      "name": "core.ptr.null_mut",
+      "file_index": 9,
+      "first_line": 710,
+      "local": true
+    },
+    {
+      "name": "core.ptr.metadata.from_raw_parts_mut",
+      "file_index": 10,
+      "first_line": 127,
+      "local": true
+    },
+    {
+      "name": "core.ptr.slice_from_raw_parts",
+      "file_index": 9,
+      "first_line": 737,
       "local": true
     },
     {
@@ -294,13 +288,7 @@ commit;
     {
       "name": "core.ptr.slice_from_raw_parts_mut",
       "file_index": 9,
-      "first_line": 715,
-      "local": true
-    },
-    {
-      "name": "core.ptr.metadata.from_raw_parts_mut",
-      "file_index": 10,
-      "first_line": 127,
+      "first_line": 769,
       "local": true
     },
     {
@@ -342,19 +330,19 @@ commit;
     {
       "name": "core.ptr.non_null.implement_core_ptr_non_null_NonNull_slice_generic_par_T.as_non_null_ptr",
       "file_index": 13,
-      "first_line": 531,
+      "first_line": 532,
       "local": true
     },
     {
       "name": "core.ptr.mut_ptr.implement_pointer_mut_slice_generic_par_T.as_mut_ptr",
       "file_index": 12,
-      "first_line": 1471,
+      "first_line": 1640,
       "local": true
     },
     {
       "name": "core.ptr.non_null.implement_core_ptr_non_null_NonNull_slice_generic_par_T.as_mut_ptr",
       "file_index": 13,
-      "first_line": 551,
+      "first_line": 552,
       "local": true
     },
     {
@@ -384,7 +372,7 @@ commit;
     {
       "name": "core.ptr.non_null.implement_core_ptr_non_null_NonNull_generic_par_T.from",
       "file_index": 13,
-      "first_line": 783,
+      "first_line": 784,
       "local": true
     },
     {
@@ -396,19 +384,19 @@ commit;
     {
       "name": "core.ptr.const_ptr.implement.guaranteed_eq",
       "file_index": 11,
-      "first_line": 715,
+      "first_line": 770,
       "local": true
     },
     {
       "name": "core.intrinsics.foreign_1.ptr_guaranteed_eq",
       "file_index": 15,
-      "first_line": 1918,
+      "first_line": 1921,
       "local": false
     },
     {
       "name": "core.ptr.const_ptr.implement.add",
       "file_index": 11,
-      "first_line": 808,
+      "first_line": 863,
       "local": true
     },
     {
@@ -420,25 +408,25 @@ commit;
     {
       "name": "core.ptr.const_ptr.implement.wrapping_add",
       "file_index": 11,
-      "first_line": 935,
+      "first_line": 1031,
       "local": true
     },
     {
       "name": "core.ptr.const_ptr.implement.wrapping_offset",
       "file_index": 11,
-      "first_line": 512,
+      "first_line": 532,
       "local": true
     },
     {
       "name": "core.ptr.mut_ptr.implement.guaranteed_eq",
       "file_index": 12,
-      "first_line": 660,
+      "first_line": 701,
       "local": true
     },
     {
       "name": "core.result.implement_core_result_Result_generic_par_T_generic_par_F.from_residual",
       "file_index": 16,
-      "first_line": 2103,
+      "first_line": 2123,
       "local": true
     },
     {
@@ -511,6 +499,12 @@ commit;
       "name": "core.alloc.layout.implement.dangling",
       "file_index": 21,
       "first_line": 194,
+      "local": true
+    },
+    {
+      "name": "core.ptr.invalid_mut",
+      "file_index": 9,
+      "first_line": 611,
       "local": true
     },
     {
@@ -588,7 +582,7 @@ commit;
     {
       "name": "core.ptr.read",
       "file_index": 9,
-      "first_line": 1080,
+      "first_line": 1134,
       "local": true
     },
     {
@@ -830,199 +824,199 @@ commit;
     ],
     [
       9,
-      511,
+      534,
       5,
       16,
       17
     ],
     [
       9,
-      531,
+      711,
       5,
       18,
       19
     ],
     [
       9,
-      684,
+      738,
       5,
+      20,
+      17
+    ],
+    [
+      9,
+      738,
+      20,
       20,
       21
     ],
     [
       9,
-      684,
-      20,
-      20,
-      22
-    ],
-    [
-      9,
-      716,
+      770,
       5,
-      23,
-      24
+      22,
+      19
     ],
     [
       9,
-      716,
+      770,
       24,
-      23,
-      25
+      22,
+      23
     ],
     [
       13,
       219,
       13,
-      26,
-      27
+      24,
+      25
     ],
     [
       13,
       221,
       27,
-      26,
-      28
+      24,
+      26
     ],
     [
       13,
       489,
       18,
-      29,
-      28
+      27,
+      26
     ],
     [
       13,
       489,
       38,
-      29,
-      23
+      27,
+      22
     ],
     [
       13,
       489,
       70,
+      27,
+      28
+    ],
+    [
+      13,
+      534,
+      18,
+      29,
+      26
+    ],
+    [
+      13,
+      534,
+      41,
+      29,
+      28
+    ],
+    [
+      13,
+      534,
+      41,
       29,
       30
     ],
     [
       13,
-      533,
-      18,
+      553,
+      9,
+      31,
+      29
+    ],
+    [
+      13,
+      553,
+      9,
       31,
       28
-    ],
-    [
-      13,
-      533,
-      41,
-      31,
-      30
-    ],
-    [
-      13,
-      533,
-      41,
-      31,
-      32
-    ],
-    [
-      13,
-      552,
-      9,
-      33,
-      31
-    ],
-    [
-      13,
-      552,
-      9,
-      33,
-      30
     ],
     [
       14,
       87,
       36,
-      34,
-      28
+      32,
+      26
     ],
     [
       14,
       104,
       9,
-      35,
-      30
+      33,
+      28
     ],
     [
       14,
       180,
       9,
-      36,
-      37
+      34,
+      35
     ],
     [
       14,
       180,
       20,
-      36,
+      34,
+      36
+    ],
+    [
+      11,
+      39,
+      9,
+      37,
       38
     ],
     [
       11,
       39,
-      9,
-      39,
-      40
-    ],
-    [
-      11,
-      39,
       43,
-      39,
+      37,
       16
     ],
     [
       11,
-      719,
+      774,
       9,
+      38,
+      39
+    ],
+    [
+      11,
+      868,
+      18,
       40,
       41
     ],
     [
       11,
-      813,
-      18,
+      1035,
+      9,
       42,
       43
-    ],
-    [
-      11,
-      939,
-      9,
-      44,
-      45
     ],
     [
       12,
       38,
       9,
-      27,
-      46
+      25,
+      44
     ],
     [
       12,
       38,
       41,
-      27,
+      25,
       18
     ],
     [
       12,
-      664,
+      705,
       9,
-      46,
-      41
+      44,
+      39
     ],
     [
       2,
@@ -1033,136 +1027,80 @@ commit;
     ],
     [
       16,
-      2105,
+      2125,
       27,
-      47,
-      48
+      45,
+      46
     ],
     [
       2,
       339,
       5,
       3,
-      49
+      47
     ],
     [
       3,
-      733,
+      735,
       9,
       6,
-      50
+      48
     ],
     [
       18,
       89,
       19,
-      50,
-      51
+      48,
+      49
     ],
     [
       18,
       92,
       13,
-      50,
-      52
+      48,
+      50
     ],
     [
       18,
       92,
       21,
-      50,
-      39
+      48,
+      37
     ],
     [
       18,
       94,
       26,
-      50,
-      53
+      48,
+      51
     ],
     [
       18,
       95,
       17,
-      50,
-      44
+      48,
+      42
     ],
     [
       18,
       97,
       17,
-      50,
-      42
+      48,
+      40
     ],
     [
       18,
       100,
       25,
-      50,
-      28
+      48,
+      26
     ],
     [
       18,
       135,
       1,
       7,
-      30
-    ],
-    [
-      18,
-      135,
-      1,
-      7,
-      54
-    ],
-    [
-      18,
-      135,
-      1,
-      54,
-      45
-    ],
-    [
-      18,
-      135,
-      1,
-      54,
-      53
-    ],
-    [
-      18,
-      135,
-      1,
-      54,
-      30
-    ],
-    [
-      18,
-      135,
-      1,
-      54,
-      30
-    ],
-    [
-      18,
-      135,
-      1,
-      54,
       28
-    ],
-    [
-      18,
-      135,
-      1,
-      54,
-      30
-    ],
-    [
-      18,
-      135,
-      1,
-      54,
-      55
     ],
     [
       18,
@@ -1175,21 +1113,49 @@ commit;
       18,
       135,
       1,
-      7,
-      30
+      52,
+      43
     ],
     [
       18,
       135,
       1,
-      7,
-      27
+      52,
+      51
     ],
     [
       18,
       135,
       1,
-      7,
+      52,
+      28
+    ],
+    [
+      18,
+      135,
+      1,
+      52,
+      28
+    ],
+    [
+      18,
+      135,
+      1,
+      52,
+      26
+    ],
+    [
+      18,
+      135,
+      1,
+      52,
+      28
+    ],
+    [
+      18,
+      135,
+      1,
+      52,
       53
     ],
     [
@@ -1197,48 +1163,83 @@ commit;
       135,
       1,
       7,
-      52
+      50
     ],
     [
       18,
       135,
       1,
       7,
-      39
+      28
+    ],
+    [
+      18,
+      135,
+      1,
+      7,
+      25
+    ],
+    [
+      18,
+      135,
+      1,
+      7,
+      51
+    ],
+    [
+      18,
+      135,
+      1,
+      7,
+      50
+    ],
+    [
+      18,
+      135,
+      1,
+      7,
+      37
     ],
     [
       20,
       97,
       11,
-      56,
+      54,
       20
     ],
     [
       21,
       100,
       40,
+      55,
+      56
+    ],
+    [
+      21,
+      196,
+      18,
+      57,
+      26
+    ],
+    [
+      21,
+      196,
+      41,
       57,
       58
     ],
     [
       21,
       196,
-      18,
-      59,
-      28
-    ],
-    [
-      21,
-      196,
-      41,
-      59,
-      19
-    ],
-    [
-      21,
-      196,
       71,
-      59,
+      57,
+      59
+    ],
+    [
+      0,
+      39,
+      14,
+      10,
       60
     ],
     [
@@ -1249,242 +1250,235 @@ commit;
       61
     ],
     [
-      0,
-      39,
-      14,
-      10,
-      62
-    ],
-    [
       24,
       216,
       30,
-      63,
-      34
+      62,
+      32
     ],
     [
       24,
       224,
       9,
-      64,
-      35
+      63,
+      33
     ],
     [
       23,
       89,
       27,
-      65,
-      66
+      64,
+      65
     ],
     [
       23,
       89,
       42,
-      65,
-      60
+      64,
+      59
     ],
     [
       23,
       160,
       34,
-      67,
-      66
+      66,
+      65
     ],
     [
       23,
       160,
       49,
-      67,
-      60
+      66,
+      59
     ],
     [
       23,
       231,
       9,
-      68,
-      69
+      67,
+      68
     ],
     [
       25,
       1080,
       31,
-      70,
-      71
+      69,
+      70
     ],
     [
       25,
       1081,
       10,
-      70,
-      35
+      69,
+      33
     ],
     [
       25,
       1098,
       30,
-      71,
-      72
+      70,
+      71
     ],
     [
       25,
       1099,
       10,
-      71,
-      36
+      70,
+      34
     ],
     [
       25,
       1099,
       23,
-      71,
-      73
+      70,
+      72
     ],
     [
       25,
       1100,
       5,
-      71,
+      70,
+      73
+    ],
+    [
+      25,
+      1156,
+      24,
+      72,
       74
     ],
     [
       25,
       1156,
       24,
-      73,
+      72,
       75
     ],
     [
       25,
       1156,
       24,
-      73,
-      76
-    ],
-    [
-      25,
-      1156,
-      24,
-      73,
-      35
+      72,
+      33
     ],
     [
       22,
       167,
       23,
-      77,
-      78
+      76,
+      77
     ],
     [
       22,
       168,
       30,
-      77,
-      70
+      76,
+      69
     ],
     [
       22,
       169,
       13,
-      77,
-      79
+      76,
+      78
     ],
     [
       22,
       171,
       5,
-      77,
-      74
+      76,
+      73
     ],
     [
       22,
       528,
       9,
-      61,
-      77
+      60,
+      76
     ],
     [
       5,
       691,
       29,
-      79,
-      63
+      78,
+      62
     ],
     [
       5,
       1140,
       19,
-      80,
-      64
+      79,
+      63
     ],
     [
       5,
       1142,
       13,
-      80,
-      52
+      79,
+      50
     ],
     [
       5,
       1142,
       21,
-      80,
-      27
+      79,
+      25
     ],
     [
       5,
       1176,
       19,
-      81,
-      64
+      80,
+      63
     ],
     [
       5,
       1178,
       13,
-      81,
-      52
+      80,
+      50
     ],
     [
       5,
       1178,
       21,
-      81,
-      27
+      80,
+      25
     ],
     [
       5,
       2497,
       18,
       11,
-      56
+      54
     ],
     [
       5,
       2497,
       40,
       11,
-      80
+      79
     ],
     [
       5,
-      2881,
+      2884,
       13,
       9,
-      82
+      81
     ],
     [
       5,
-      2881,
+      2884,
       32,
       9,
-      23
+      22
     ],
     [
       5,
-      2881,
+      2884,
       62,
       9,
-      81
+      80
     ]
   ]
 }*/

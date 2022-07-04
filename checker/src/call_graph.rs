@@ -162,7 +162,7 @@ impl CallGraphConfig {
 }
 
 /// The type of a call graph node.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 enum NodeType {
     /// Regular root: Any function that is not a crate root
     Root,
