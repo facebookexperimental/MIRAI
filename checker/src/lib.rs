@@ -10,7 +10,7 @@
 // versions of Mirai will continue to work just as before.
 //
 // In the current world, however, we have to use the following hacky feature to get access to a
-// private and not very stable set of APIs from whatever compiler is in the path when we run Mirai.
+// private and not very stable set of APIs from whatever compiler is in the toolchain when we run Mirai.
 // While pretty bad, it is a lot less bad than having to write our own compiler, so here goes.
 #![feature(rustc_private)]
 #![feature(box_patterns)]
