@@ -1472,7 +1472,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             .and(if expected {
                 cond_val.clone()
             } else {
-                not_cond_val
+                not_cond_val.clone()
             });
         if !normal_exit_condition.is_bottom() {
             self.bv
@@ -1514,7 +1514,14 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     // At this point, we don't know that this assert is unreachable and we don't know
                     // that the condition is as expected, so we need to warn about it somewhere.
                     check_for_early_return!(self.bv);
-                    let promotable_cond_val = cond_val.extract_promotable_disjuncts(false);
+                    // Get a condition which, if true, guarantees that cond_val will match the expected value.
+                    // The expression will not contain any local variables, so the caller will be able to
+                    // deal with it. If may not, however, be weak enough for the caller to satisfy
+                    // leading to false positives. When this arises in practice, it would be because
+                    // some weakness in the analysis of the current function has lead to an imprecise
+                    // value for cond_val.
+                    let promotable_cond_val = (if expected { cond_val } else { not_cond_val })
+                        .extract_promotable_disjuncts(false);
                     check_for_early_return!(self.bv);
                     let promotable_entry_cond = self
                         .bv
@@ -1543,17 +1550,12 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     self.bv
                         .preconditions
                         .retain(|pc| pc.spans.last() != Some(&sp));
-                    let expected_cond = if expected {
-                        promotable_cond_val.unwrap()
-                    } else {
-                        promotable_cond_val.unwrap().logical_not()
-                    };
                     // To make sure that this assertion never fails, we should either never
                     // get here (!entry_condition) or expected_cond should be true.
                     let condition = promotable_entry_cond
                         .unwrap()
                         .logical_not()
-                        .or(expected_cond);
+                        .or(promotable_cond_val.unwrap());
                     let message = Rc::from(String::from(get_assert_msg_description(msg)));
                     let precondition = Precondition {
                         condition,
