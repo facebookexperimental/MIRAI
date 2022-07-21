@@ -2135,6 +2135,8 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         if !matches!(self.expression, Expression::Or { .. }) {
             if consequent.expression_size <= k_limits::MAX_EXPRESSION_SIZE / 10 {
                 consequent = consequent.refine_with(self, 35);
+            } else if consequent.expression_size <= k_limits::MAX_EXPRESSION_SIZE / 5 {
+                consequent = consequent.refine_with(self, 5);
             }
             if alternate.expression_size < k_limits::MAX_EXPRESSION_SIZE / 10 {
                 alternate = alternate.refine_with(&not_self, 35);
@@ -2155,6 +2157,8 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                         alternate = cl.conditional_expression(x.clone(), y.clone());
                     }
                 }
+            } else if alternate.expression_size < k_limits::MAX_EXPRESSION_SIZE / 5 {
+                alternate = alternate.refine_with(&not_self, 5);
             }
         }
 
@@ -4398,21 +4402,11 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     },
                 ) => {
                     if x1.eq(x2) {
-                        return if y1.logical_not().eq(y2) {
-                            // [(x && y) || (x && !y)] -> x
-                            x1.clone()
-                        } else {
-                            // [(x && y1) || (x && y2)] -> x && (y1 || y2)
-                            x1.and(y1.or(y2.clone()))
-                        };
+                        // [(x && y1) || (x && y2)] -> x && (y1 || y2)
+                        return x1.and(y1.or(y2.clone()));
                     } else if y1.eq(y2) {
-                        return if x1.logical_not().eq(x2) {
-                            // [(x && y) || (!x && y)] -> y
-                            y1.clone()
-                        } else {
-                            // [(x1 && y) || (x2 && y)] -> (x1 || x2) && y
-                            x1.or(x2.clone()).and(y1.clone())
-                        };
+                        // [(x1 && y) || (x2 && y)] -> (x1 || x2) && y
+                        return x1.or(x2.clone()).and(y1.clone());
                     } else if let Expression::And {
                         left: x2,
                         right: x3,
@@ -4582,45 +4576,37 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 }
 
                 (
-                    Expression::Or {
-                        left: x,
-                        right: ynz,
-                    },
+                    Expression::Or { left: x, right: a },
                     Expression::And {
                         left: y2,
                         right: z2,
                     },
                 ) => {
-                    // [(x || (y && !z)) || (y && z)))] -> x || y
-                    if let Expression::And {
-                        left: y1,
-                        right: nz,
-                    } = &ynz.expression
+                    // [((x || (y && z1)) || a) || (y && z2)] -> (x || (y && (z1 || z2)) || a
+                    if let Expression::Or {
+                        left: x1,
+                        right: yz1,
+                    } = &x.expression
                     {
-                        if let Expression::LogicalNot { operand: z1 } = &nz.expression {
-                            if y1.eq(y2) && z1.eq(z2) {
-                                return x.or(y1.clone());
+                        if let Expression::And {
+                            left: y1,
+                            right: z1,
+                        } = &yz1.expression
+                        {
+                            if y1.eq(y2) {
+                                return x1.or(y1.and(z1.or(z2.clone()))).or(a.clone());
                             }
                         }
                     }
 
-                    // [((x || (y && !z)) || a) || (y && z)] -> (x || y) || a
-                    if let Expression::Or {
-                        left: x1,
-                        right: ynz1,
-                    } = &x.expression
+                    // [(x || (y && z1)) || (y && z2)] -> x || (y && (z1 || z2))
+                    if let Expression::And {
+                        left: y1,
+                        right: z1,
+                    } = &a.expression
                     {
-                        let a = ynz;
-                        if let Expression::And {
-                            left: y1,
-                            right: nz,
-                        } = &ynz1.expression
-                        {
-                            if let Expression::LogicalNot { operand: z1 } = &nz.expression {
-                                if y1.eq(y2) && z1.eq(z2) {
-                                    return x1.or(y1.clone()).or(a.clone());
-                                }
-                            }
+                        if y1.eq(y2) {
+                            return x.or(y1.and(z1.or(z2.clone())));
                         }
                     }
                 }
@@ -4670,6 +4656,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                         }
                     }
                 }
+
                 _ => {}
             }
             self.try_to_constant_fold_and_distribute_binary_op(
