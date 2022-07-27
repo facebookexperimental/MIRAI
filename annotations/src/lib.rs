@@ -34,41 +34,57 @@ macro_rules! abstract_value {
 /// particular propagation.
 pub type TagPropagationSet = u128;
 
-
 /// Enable this `TagPropagation` kind in this `TagPropagationSet`. This function
 /// is `const` so you are able to call it when constructing a mask for taint
 /// propagation.
-/// 
+///
 /// This function is a no-op if this propagation is already enabled.
-pub const fn add_propagation(set: TagPropagationSet, propagation: TagPropagation) -> TagPropagationSet {
+pub const fn add_propagation(
+    set: TagPropagationSet,
+    propagation: TagPropagation,
+) -> TagPropagationSet {
     set | propagation.into_set()
 }
 
 /// Disable this `TagPropagation` kind in this `TagPropagationSet`. This
 /// function is `const` so you are able to call it when constructing a mask for
-/// taint propagation. 
-/// 
+/// taint propagation.
+///
 /// This function is a no-op if this propagation is already disabled.
-/// 
+///
 /// The intended is so you can conveniently disable propagations from the set of
 /// all propagations, e.g. `remove_propagation(TAG_PROPAGATION_ALL,
 /// TagPropagation::Add)`.
-pub const fn remove_propagation(set: TagPropagationSet, propagation: TagPropagation) -> TagPropagationSet {
+pub const fn remove_propagation(
+    set: TagPropagationSet,
+    propagation: TagPropagation,
+) -> TagPropagationSet {
     set & !propagation.into_set()
 }
 
 #[test]
 fn test_rem_prop() {
-    assert!(remove_propagation(tag_propagation_set!(TagPropagation::Add), TagPropagation::Add) == 0);
-    assert!(remove_propagation(TAG_PROPAGATION_ALL, TagPropagation::SuperComponent) & TagPropagation::SuperComponent.into_set() == 0)
+    assert!(
+        remove_propagation(
+            tag_propagation_set!(TagPropagation::Add),
+            TagPropagation::Add
+        ) == 0
+    );
+    assert!(
+        remove_propagation(TAG_PROPAGATION_ALL, TagPropagation::SuperComponent)
+            & TagPropagation::SuperComponent.into_set()
+            == 0
+    )
 }
 
 #[test]
 fn test_add_prop() {
     assert!(add_propagation(TAG_PROPAGATION_ALL, TagPropagation::Add) == TAG_PROPAGATION_ALL);
-    assert!(add_propagation(0, TagPropagation::SuperComponent) == TagPropagation::SuperComponent.into_set())
+    assert!(
+        add_propagation(0, TagPropagation::SuperComponent)
+            == TagPropagation::SuperComponent.into_set()
+    )
 }
-
 
 /// An enum type of controllable operations for MIRAI tag types.
 /// In general, the result of the operation corresponding to an enum value will

@@ -2489,7 +2489,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 let qualified_path = path
                     .replace_root(&source_path, target_path.clone())
                     .canonicalize(&env);
-                if move_elements {
+                if move_elements && !path.contains_deref() {
                     trace!("moving child {:?} to {:?}", value, qualified_path);
                     self.current_environment.value_map =
                         self.current_environment.value_map.remove(path);

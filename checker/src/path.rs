@@ -218,6 +218,7 @@ impl Debug for PathEnum {
 }
 
 pub trait PathRoot: Sized {
+    fn contains_deref(&self) -> bool;
     fn get_path_root(&self) -> &Self;
     fn get_parameter_root_ordinal(&self) -> Option<usize>;
     fn has_tagged_subcomponent(&self, tag: &Tag, env: &Environment) -> bool;
@@ -228,6 +229,27 @@ pub trait PathRoot: Sized {
 }
 
 impl PathRoot for Rc<Path> {
+    /// True if any part of the path is a deref. Used to distinguish paths
+    /// that are part of contiguous structures from paths that deference pointers.
+    /// The former have to move when the overall structure moves.
+    #[logfn_inputs(TRACE)]
+    fn contains_deref(&self) -> bool {
+        if let PathEnum::QualifiedPath {
+            qualifier,
+            selector,
+            ..
+        } = &self.value
+        {
+            if matches!(selector.as_ref(), PathSelector::Deref) {
+                true
+            } else {
+                qualifier.contains_deref()
+            }
+        } else {
+            false
+        }
+    }
+
     /// Returns a reference to the effective root of the given path.
     #[logfn_inputs(TRACE)]
     fn get_path_root(&self) -> &Rc<Path> {
