@@ -42,7 +42,8 @@ impl NibblePath {
             self.bytes.pop().map(|byte| Nibble::from(byte >> 4))
         };
         if popped_nibble.is_some() {
-            self.num_nibbles -= 1;
+            //todo: fix this
+            //self.num_nibbles -= 1;
         }
         popped_nibble
     }

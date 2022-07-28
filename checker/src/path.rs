@@ -425,7 +425,7 @@ impl Path {
         if self.eq(other.as_ref()) {
             return Rc::new(abstract_value::TRUE);
         }
-        return match (&self.value, &other.value) {
+        match (&self.value, &other.value) {
             (PathEnum::Computed { value: v1 }, PathEnum::Computed { value: v2 })
             | (PathEnum::HeapBlock { value: v1 }, PathEnum::HeapBlock { value: v2 }) => {
                 v1.equals(v2.clone())
@@ -480,7 +480,7 @@ impl Path {
                 },
             ) => s1.equals(s2).and(q1.equals(q2)),
             _ => Rc::new(abstract_value::FALSE),
-        };
+        }
     }
 
     /// Returns the index value of the index path qualified by qualifier.

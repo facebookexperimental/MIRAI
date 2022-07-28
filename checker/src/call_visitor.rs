@@ -1401,7 +1401,8 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             source_rustc_type = source_rustc_type.boxed_ty();
             let box_path = Path::new_deref(source_pointer_path, target_type)
                 .canonicalize(&self.block_visitor.bv.current_environment);
-            Path::new_field(Path::new_field(box_path, 0), 0)
+            // Box.0 = Unique, Unique.0 = NonNullPtr, NonNullPtr.0 = source thin pointer
+            Path::new_field(Path::new_field(Path::new_field(box_path, 0), 0), 0)
         } else if self
             .type_visitor()
             .is_slice_pointer(source_pointer_rustc_type.kind())
@@ -1460,14 +1461,18 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
 
     /// Check if a tag has been attached to the first and only value in actual_args.
     /// The tag type is indicated by a generic argument.
-    #[logfn_inputs(TRACE)]
+    #[logfn_inputs(DEBUG)]
     fn handle_check_tag(&mut self, checking_presence: bool) {
         precondition!(self.actual_args.len() == 1);
+        debug!(
+            "path condition {:?}",
+            self.block_visitor.bv.current_environment.entry_condition
+        );
 
         let result: Option<Rc<AbstractValue>>;
         if let Some(tag) = self.extract_tag_kind_and_propagation_set() {
             let (source_path, source_rustc_type) = self.deref_tag_source();
-            trace!(
+            debug!(
                 "MiraiCheckTag: checking if {:?} has {}been tagged with {:?}",
                 source_path,
                 (if checking_presence { "" } else { "never " }),
@@ -1507,6 +1512,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             if tag.is_propagated_by(TagPropagation::SubComponent) {
                 let mut path_prefix = &tag_field_path;
                 while let PathEnum::QualifiedPath { qualifier, .. } = &path_prefix.value {
+                    debug!("qualifier {:?}", qualifier);
                     path_prefix = qualifier;
 
                     let path_prefix_rustc_type = self

@@ -64,8 +64,8 @@ commit;
 /* EXPECTED:CALL_SITES{
   "files": [
     "tests/call_graph/static_fold.rs",
-    "/rustc/1fede1753c33f4ce0660ad9b8edbd618d9733daf/library/std/src/io/stdio.rs",
-    "/rustc/1fede1753c33f4ce0660ad9b8edbd618d9733daf/library/core/src/fmt/mod.rs"
+    "/rustc/f2d93935ffba3ab9d7ccb5300771a2d29b4c8bf3/library/std/src/io/stdio.rs",
+    "/rustc/f2d93935ffba3ab9d7ccb5300771a2d29b4c8bf3/library/core/src/fmt/mod.rs"
   ],
   "callables": [
     {
@@ -95,13 +95,13 @@ commit;
     {
       "name": "std.io.stdio._print",
       "file_index": 1,
-      "first_line": 1027,
+      "first_line": 1026,
       "local": false
     },
     {
       "name": "core.fmt.implement_core_fmt_Arguments.new_v1",
       "file_index": 2,
-      "first_line": 388,
+      "first_line": 390,
       "local": true
     }
   ],
@@ -143,7 +143,7 @@ commit;
     ],
     [
       2,
-      390,
+      392,
       13,
       5,
       5

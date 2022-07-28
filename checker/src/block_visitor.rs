@@ -13,12 +13,13 @@ use log_derive::*;
 
 use mirai_annotations::*;
 use rustc_hir::def_id::DefId;
+use rustc_index::vec::Idx;
 use rustc_middle::mir;
 use rustc_middle::mir::interpret::{alloc_range, ConstValue, GlobalAlloc, Scalar};
 use rustc_middle::ty::adjustment::PointerCast;
 use rustc_middle::ty::subst::{GenericArg, SubstsRef};
 use rustc_middle::ty::{
-    Const, ConstKind, FloatTy, IntTy, ParamConst, ScalarInt, Ty, TyKind, UintTy,
+    Const, FloatTy, IntTy, ParamConst, ScalarInt, Ty, TyKind, UintTy, ValTree, VariantDef,
 };
 use rustc_target::abi::{Primitive, TagEncoding, VariantIdx, Variants};
 
@@ -2024,7 +2025,16 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         ty: rustc_middle::ty::Ty<'tcx>,
     ) {
         match cast_kind {
-            mir::CastKind::Pointer(pointer_cast) => {
+            // An exposing pointer to address cast. A cast between a pointer and an integer type, or
+            // between a function pointer and an integer type.
+            // See the docs on `expose_addr` for more details.
+            mir::CastKind::PointerExposeAddress
+            // An address-to-pointer cast that picks up an exposed provenance.
+            // See the docs on `from_exposed_addr` for more details.
+            | mir::CastKind::PointerFromExposedAddress
+            // All sorts of pointer-to-pointer casts. Note that reference-to-raw-ptr casts are
+            // translated into `&raw mut/const *r`, i.e., they are not actually casts.
+            | mir::CastKind::Pointer(..) => {
                 // The value remains unchanged, but pointers may be fat, so use copy_or_move_elements
                 let (is_move, place) = match operand {
                     mir::Operand::Copy(place) => (false, place),
@@ -2041,7 +2051,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         return;
                     }
                 };
-                if let PointerCast::Unsize = pointer_cast {
+                if matches!(cast_kind, mir::CastKind::Pointer(PointerCast::Unsize)){
                     // Unsize a pointer/reference value, e.g., `&[T; n]` to
                     // `&[T]`. Note that the source could be a thin or fat pointer.
                     // This will do things like convert thin pointers to fat
@@ -2117,6 +2127,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 self.bv
                     .copy_or_move_elements(path, source_path, ty, is_move);
             }
+            // Remaining unclassified casts.
             mir::CastKind::Misc => {
                 let source_type = self.get_operand_rustc_type(operand);
                 let mut source_value = self.visit_operand(operand);
@@ -2355,7 +2366,8 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         operand: &mir::Operand<'tcx>,
         ty: Ty<'tcx>,
     ) {
-        let value_path = Path::new_field(Path::new_field(path, 0), 0);
+        // Box.0 = Unique, Unique.0 = NonNullPtr, NonNullPtr.0 = source thin pointer
+        let value_path = Path::new_field(Path::new_field(Path::new_field(path, 0), 0), 0);
         let ty = self
             .type_visitor()
             .specialize_generic_argument_type(ty, &self.type_visitor().generic_argument_map);
@@ -2452,22 +2464,19 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
     /// Returns a value that corresponds to the given literal
     #[logfn_inputs(TRACE)]
     pub fn visit_literal(&mut self, literal: &mir::ConstantKind<'tcx>) -> Rc<AbstractValue> {
-        if let Some(v) = literal.try_to_value() {
-            self.visit_const_kind(ConstKind::Value(v), literal.ty())
-        } else if let Some(c) = literal.const_for_ty() {
-            self.visit_const(&c)
-        } else {
-            unreachable!("try_to_value will only return None when const_for_ty will return Some")
+        match literal {
+            // This constant came from the type system
+            mir::ConstantKind::Ty(c) => self.visit_const(c),
+            // This constant contains something the type system cannot handle (e.g. pointers).
+            mir::ConstantKind::Val(v, ty) => self.visit_const_value(*v, *ty),
         }
     }
 
-    /// Synthesizes a constant value. Also used for static variable values.
+    /// Synthesizes a MIRAI constant value from a RustC constant as used in the type system
     #[logfn_inputs(TRACE)]
     pub fn visit_const(&mut self, literal: &Const<'tcx>) -> Rc<AbstractValue> {
-        self.visit_const_kind(literal.val(), literal.ty())
-    }
-
-    fn visit_const_kind(&mut self, mut val: ConstKind<'tcx>, lty: Ty<'tcx>) -> Rc<AbstractValue> {
+        let mut val = literal.kind();
+        let lty = literal.ty();
         if let rustc_middle::ty::ConstKind::Unevaluated(unevaluated) = &val {
             let def_ty = unevaluated.def;
             if def_ty.const_param_did.is_some() {
@@ -2577,37 +2586,8 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             }
         }
 
-        // Don't try to parse serialized functions, just use their types
-        // todo: serialized closures and generators do not store enough information in their types.
-        match lty.kind() {
-            TyKind::Closure(def_id, substs)
-            | TyKind::FnDef(def_id, substs)
-            | TyKind::Generator(def_id, substs, ..)
-            | TyKind::Opaque(def_id, substs) => {
-                let specialized_ty = self.type_visitor().specialize_generic_argument_type(
-                    lty,
-                    &self.type_visitor().generic_argument_map,
-                );
-                let substs = self
-                    .type_visitor()
-                    .specialize_substs(substs, &self.type_visitor().generic_argument_map);
-                return Rc::new(
-                    self.visit_function_reference(*def_id, specialized_ty, Some(substs))
-                        .clone()
-                        .into(),
-                );
-            }
-            TyKind::FnPtr(..) => {
-                //todo: figure out how function pointers are serialized
-                debug!("span: {:?}", self.bv.current_span);
-                debug!("type kind {:?}", lty.kind());
-                debug!("unimplemented constant {:?}", val);
-                return Rc::new(ConstantDomain::Unimplemented.into());
-            }
-            _ => {}
-        }
-
         match &val {
+            // A const generic parameter.
             rustc_middle::ty::ConstKind::Param(ParamConst { index, .. }) => {
                 if let Some(gen_args) = self.type_visitor().generic_arguments {
                     if let Some(arg_val) = gen_args.as_ref().get(*index as usize) {
@@ -2620,80 +2600,160 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     self.bv.current_span
                 );
             }
-            rustc_middle::ty::ConstKind::Value(ConstValue::ByRef { alloc, offset }) => {
-                let alloc_len = alloc.inner().len();
-                let offset_bytes = offset.bytes() as usize;
-                // The Rust compiler should ensure this.
-                assume!(alloc_len > offset_bytes);
-                let num_bytes = alloc_len - offset_bytes;
-                let bytes = alloc
-                    .inner()
-                    .inspect_with_uninit_and_ptr_outside_interpreter(offset_bytes..alloc_len);
-                let (heap_val, target_path) = self.bv.get_new_heap_block(
-                    Rc::new((num_bytes as u128).into()),
-                    Rc::new(1u128.into()),
-                    false,
-                    lty,
-                );
-                let bytes_left_to_deserialize =
-                    self.deserialize_constant_bytes(target_path, bytes, lty);
-                if !bytes_left_to_deserialize.is_empty() {
-                    debug!("span: {:?}", self.bv.current_span);
-                    debug!("type kind {:?}", lty.kind());
-                    debug!("constant value did not serialize correctly {:?}", val);
-                }
-                return heap_val;
+            // ZSTs, integers, `bool`, `char` and small structs are represented as scalars.
+            // See the `ScalarInt` documentation for how `ScalarInt` guarantees that equal values
+            // of these types have the same representation.
+            rustc_middle::ty::ConstKind::Value(ValTree::Leaf(scalar_int)) => {
+                self.get_constant_value_from_scalar(lty, *scalar_int)
             }
-            rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Int(scalar_int))) => {
-                let size = scalar_int.size().bytes() as usize;
-                let data: u128 = if *scalar_int == ScalarInt::ZST {
-                    0
-                } else {
-                    scalar_int.to_bits(scalar_int.size()).unwrap()
-                };
-                let byte_array = data.to_ne_bytes();
-                let bytes: &[u8] = &byte_array[0..size];
+            // The fields of any kind of aggregate. Structs, tuples and arrays are represented by
+            // listing their fields' values in order.
+            // Enums are represented by storing their discriminant as a field, followed by all
+            // the fields of the variant.
+            rustc_middle::ty::ConstKind::Value(val_tree) => {
+                let (heap_block, heap_path) = self.get_heap_block_and_path(lty, val_tree);
+                self.deserialize_val_tree(val_tree, heap_path, lty);
+                heap_block
+            }
+            _ => {
+                debug!("val {:?}", val);
+                Rc::new(ConstantDomain::Unimplemented.into())
+            }
+        }
+    }
 
-                match lty.kind() {
-                    TyKind::Adt(adt_def, _) if adt_def.is_enum() => {
-                        return self.get_enum_variant_as_constant(&val, lty);
-                    }
-                    TyKind::Adt(..) | TyKind::Tuple(..) => {
-                        if *scalar_int == ScalarInt::ZST {
-                            return Rc::new(ConstantDomain::Unit.into());
+    fn get_heap_block_and_path(
+        &mut self,
+        lty: Ty<'tcx>,
+        _val_tree: &ValTree<'tcx>,
+    ) -> (Rc<AbstractValue>, Rc<Path>) {
+        let size = 0; // todo: get it from the type or val_tree
+        let (heap_block, heap_path) = self.bv.get_new_heap_block(
+            Rc::new((size as u128).into()),
+            Rc::new(1u128.into()),
+            false,
+            lty,
+        );
+        (heap_block, heap_path)
+    }
+
+    fn deserialize_fields(
+        &mut self,
+        substs: SubstsRef<'tcx>,
+        mut val_tree_iter: std::slice::Iter<ValTree<'tcx>>,
+        heap_path: Rc<Path>,
+        variant: &VariantDef,
+    ) {
+        for (i, field) in variant.fields.iter().enumerate() {
+            let field_path = Path::new_field(heap_path.clone(), i);
+            let field_ty = field.ty(self.bv.tcx, substs);
+            if let Some(val_tree) = val_tree_iter.next() {
+                self.deserialize_val_tree(val_tree, field_path, field_ty);
+            } else {
+                debug!("variant has more fields than was serialized {:?}", variant);
+            }
+        }
+    }
+
+    fn deserialize_val_tree(
+        &mut self,
+        val_tree: &ValTree<'tcx>,
+        target_path: Rc<Path>,
+        ty: Ty<'tcx>,
+    ) {
+        match val_tree {
+            ValTree::Leaf(scalar_int) => {
+                let const_value = self.get_constant_value_from_scalar(ty, *scalar_int);
+                self.bv.update_value_at(target_path, const_value);
+            }
+            ValTree::Branch(val_trees) => match ty.kind() {
+                TyKind::Adt(def, substs) if def.is_enum() => {
+                    let mut val_tree_iter = val_trees.iter();
+                    let variant_index =
+                        if let Some(ValTree::Leaf(scalar_int)) = val_tree_iter.next() {
+                            self.get_enum_variant_index(scalar_int, ty, &target_path)
+                        } else {
+                            unreachable!(
+                                "serialized enum value without a discriminant value {:?} {:?}",
+                                def, val_trees
+                            );
+                        };
+                    let variant = &def.variants()[variant_index];
+                    self.deserialize_fields(substs, val_tree_iter, target_path, variant);
+                }
+                TyKind::Adt(def, _) if def.is_union() => {
+                    debug!("Did not expect to a serialized union value {:?}", def);
+                }
+                TyKind::Adt(def, substs) => {
+                    let val_tree_iter = val_trees.iter();
+                    let variant = &def.variants()[VariantIdx::new(0)];
+                    self.deserialize_fields(substs, val_tree_iter, target_path, variant);
+                }
+                TyKind::Tuple(types) => {
+                    let mut val_tree_iter = val_trees.iter();
+                    for (i, field_ty) in types.iter().enumerate() {
+                        let field_path = Path::new_field(target_path.clone(), i);
+                        if let Some(val_tree) = val_tree_iter.next() {
+                            self.deserialize_val_tree(val_tree, field_path, field_ty);
+                        } else {
+                            debug!("tuple has more fields than was serialized {:?}", ty);
                         }
-                        let (heap_val, target_path) = self.bv.get_new_heap_block(
-                            Rc::new((size as u128).into()),
-                            Rc::new(1u128.into()),
-                            false,
-                            lty,
-                        );
-                        let bytes_left_to_deserialize =
-                            self.deserialize_constant_bytes(target_path, bytes, lty);
-                        if !bytes_left_to_deserialize.is_empty() {
-                            debug!("span: {:?}", self.bv.current_span);
-                            debug!("type kind {:?}", lty.kind());
-                            debug!("constant value did not serialize correctly {:?}", val);
-                        }
-                        debug!("env {:?}", self.bv.current_environment);
-                        return heap_val;
-                    }
-                    TyKind::Array(elem_type, length) => {
-                        let length = self.bv.get_array_length(length);
-                        let (array_value, array_path) = self.get_heap_array_and_path(lty, size);
-                        self.deserialize_constant_array(array_path, bytes, length, *elem_type);
-                        return array_value;
-                    }
-                    _ => {
-                        return Rc::new(
-                            self.get_constant_from_scalar(lty.kind(), *scalar_int)
-                                .clone()
-                                .into(),
-                        );
                     }
                 }
+                TyKind::Array(elem_type, length) => {
+                    let mut val_tree_iter = val_trees.iter();
+                    let length = self.bv.get_array_length(length);
+                    let length_path = Path::new_length(target_path.clone());
+                    let length_value = self.get_u128_const_val(length as u128);
+                    self.bv.update_value_at(length_path, length_value);
+                    for i in 0..length {
+                        let elem_path = Path::new_index(
+                            target_path.clone(),
+                            self.get_u128_const_val(i as u128),
+                        );
+                        if let Some(val_tree) = val_tree_iter.next() {
+                            self.deserialize_val_tree(val_tree, elem_path, *elem_type);
+                        } else {
+                            debug!("array has more elements than was serialized {:?}", ty);
+                        }
+                    }
+                }
+                _ => {
+                    debug!("did not expect a value tree branch for this type {:?}", ty);
+                }
+            },
+        }
+    }
+
+    fn get_scalar_int_data(scalar_int: &ScalarInt) -> (u128, usize) {
+        let size = scalar_int.size();
+        let data: u128 = if *scalar_int == ScalarInt::ZST {
+            0
+        } else {
+            scalar_int.to_bits(size).unwrap()
+        };
+        (data, size.bytes() as usize)
+    }
+
+    /// This represents things the type system cannot handle (e.g. pointers), as well as
+    /// everything else. The representation mirrors that of the actual runtime representation,
+    /// presumably because these values are used and produced by MIRI.
+    /// Sadly, this means that MIRAI has to have a lot of duplicated logic.
+    fn visit_const_value(&mut self, val: ConstValue<'tcx>, lty: Ty<'tcx>) -> Rc<AbstractValue> {
+        match val {
+            // The raw bytes of a simple value.
+            ConstValue::Scalar(Scalar::Int(scalar_int)) => {
+                self.get_constant_value_from_scalar(lty, scalar_int)
             }
-            rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Ptr(ptr, _))) => {
+
+            // A pointer into an `Allocation`. An `Allocation` in the `memory` module has a list of
+            // relocations, but a `Scalar` is only large enough to contain one, so we just represent the
+            // relocation and its associated offset together as a `Pointer` here.
+            //
+            // We also store the size of the pointer, such that a `Scalar` always knows how big it is.
+            // The size is always the pointer size of the current target, but this is not information
+            // that we always have readily available.
+            ConstValue::Scalar(Scalar::Ptr(ptr, _size)) => {
                 match self.bv.tcx.get_global_alloc(ptr.provenance) {
                     Some(GlobalAlloc::Memory(alloc)) => {
                         let alloc_len = alloc.inner().len() as u64;
@@ -2719,7 +2779,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                                 self.deserialize_constant_array(
                                     array_path, bytes, length, *elem_type,
                                 );
-                                return array_value;
+                                array_value
                             }
                             TyKind::Ref(_, t, _) => {
                                 if let TyKind::Array(elem_type, length) = t.kind() {
@@ -2732,10 +2792,14 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                                         length,
                                         *elem_type,
                                     );
-                                    return AbstractValue::make_reference(array_path);
+                                    AbstractValue::make_reference(array_path)
+                                } else {
+                                    assume_unreachable!("ConstValue::Ptr with type {:?}", lty);
                                 }
                             }
-                            _ => {}
+                            _ => {
+                                assume_unreachable!("ConstValue::Scalar with type {:?}", lty);
+                            }
                         }
                     }
                     Some(GlobalAlloc::Function(instance)) => {
@@ -2771,36 +2835,37 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         self.bv
                             .current_environment
                             .strong_update_value_at(field_0, fun_val);
-                        return heap_val;
+                        heap_val
                     }
-                    Some(GlobalAlloc::Static(def_id)) => {
-                        return AbstractValue::make_reference(
-                            self.bv.import_static(Path::new_static(self.bv.tcx, def_id)),
-                        );
-                    }
+                    Some(GlobalAlloc::Static(def_id)) => AbstractValue::make_reference(
+                        self.bv.import_static(Path::new_static(self.bv.tcx, def_id)),
+                    ),
                     None => unreachable!("missing allocation {:?}", ptr.provenance),
-                };
+                }
             }
-            rustc_middle::ty::ConstKind::Value(ConstValue::Slice { data, start, end }) => {
-                assume!(*end > *start); // The Rust compiler should ensure this.
-                let size = *end - *start;
+
+            // Used only for `&[u8]` and `&str`
+            ConstValue::Slice { data, start, end } => {
+                assume!(end > start); // The Rust compiler should ensure this.
+                let size = end - start;
                 let bytes = data
                     .inner()
                     .get_bytes(
                         &self.bv.tcx,
                         alloc_range(
-                            rustc_target::abi::Size::from_bytes(*start as u64),
+                            rustc_target::abi::Size::from_bytes(start as u64),
                             rustc_target::abi::Size::from_bytes(size as u64),
                         ),
                     )
                     .unwrap();
-                let slice = &bytes[*start..*end];
+                let slice = &bytes[start..end];
                 match lty.kind() {
+                    // todo: is this case possible? The comment suggests not.
                     TyKind::Array(elem_type, length) => {
                         let length = self.bv.get_array_length(length);
                         let (array_value, array_path) = self.get_heap_array_and_path(lty, size);
                         self.deserialize_constant_array(array_path, bytes, length, *elem_type);
-                        return array_value;
+                        array_value
                     }
                     TyKind::Ref(_, t, _) if matches!(t.kind(), TyKind::Slice(..)) => {
                         let elem_type = self.type_visitor().get_element_type(*t);
@@ -2813,7 +2878,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                             length,
                             elem_type,
                         );
-                        return AbstractValue::make_reference(array_path);
+                        AbstractValue::make_reference(array_path)
                     }
                     TyKind::Ref(_, t, _) if matches!(t.kind(), TyKind::Str) => {
                         let s = std::str::from_utf8(slice).expect("non utf8 str");
@@ -2827,18 +2892,46 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
 
                         let len_path = Path::new_length(str_path.clone());
                         self.bv.update_value_at(len_path, len_val);
-                        return AbstractValue::make_reference(str_path);
+                        AbstractValue::make_reference(str_path)
                     }
-                    _ => {}
+                    _ => {
+                        assume_unreachable!("ConstValue::Slice with type {:?}", lty);
+                    }
                 }
             }
-            _ => {}
-        }
 
-        debug!("span: {:?}", self.bv.current_span);
-        debug!("type kind {:?}", lty.kind());
-        debug!("unimplemented constant {:?}", val);
-        Rc::new(ConstantDomain::Unimplemented.into())
+            // A value not represented/representable by `Scalar` or `Slice`
+            ConstValue::ByRef {
+                // The backing memory of the value, may contain more memory than needed for just the value
+                // in order to share `ConstAllocation`s between values
+                alloc,
+                // Offset into `alloc`
+                offset,
+            } => {
+                let alloc_len = alloc.inner().len();
+                let offset_bytes = offset.bytes() as usize;
+                // The Rust compiler should ensure this.
+                assume!(alloc_len > offset_bytes);
+                let num_bytes = alloc_len - offset_bytes;
+                let bytes = alloc
+                    .inner()
+                    .inspect_with_uninit_and_ptr_outside_interpreter(offset_bytes..alloc_len);
+                let (heap_val, target_path) = self.bv.get_new_heap_block(
+                    Rc::new((num_bytes as u128).into()),
+                    Rc::new(1u128.into()),
+                    false,
+                    lty,
+                );
+                let bytes_left_to_deserialize =
+                    self.deserialize_constant_bytes(target_path, bytes, lty);
+                if !bytes_left_to_deserialize.is_empty() {
+                    debug!("span: {:?}", self.bv.current_span);
+                    debug!("type kind {:?}", lty.kind());
+                    debug!("constant value did not serialize correctly {:?}", val);
+                }
+                heap_val
+            }
+        }
     }
 
     /// Use a prefix of the byte slice as a serialized value of the given type.
@@ -3077,6 +3170,27 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 }
                 bytes_left_deserialize
             }
+            // todo: bytes is the serialization of the captured state of a closure/generator
+            // deserialize that and return an heap block that represents the closure state + func ptr
+            TyKind::Closure(def_id, substs)
+            | TyKind::FnDef(def_id, substs)
+            | TyKind::Generator(def_id, substs, ..)
+            | TyKind::Opaque(def_id, substs) => {
+                let specialized_ty = self.type_visitor().specialize_generic_argument_type(
+                    ty,
+                    &self.type_visitor().generic_argument_map,
+                );
+                let substs = self
+                    .type_visitor()
+                    .specialize_substs(substs, &self.type_visitor().generic_argument_map);
+                let func_val = Rc::new(
+                    self.visit_function_reference(*def_id, specialized_ty, Some(substs))
+                        .clone()
+                        .into(),
+                );
+                self.bv.update_value_at(target_path, func_val);
+                &[]
+            }
             _ => {
                 debug!("Type {:?} is not expected to be serializable", ty.kind());
                 self.bv
@@ -3132,90 +3246,66 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
     /// in the current implementation of Rust. The enum encoding is not well documented, and it might
     /// subject to changes in future versions of Rust.
     #[logfn_inputs(TRACE)]
-    fn get_enum_variant_as_constant(
+    fn get_enum_variant_index(
         &mut self,
-        val: &rustc_middle::ty::ConstKind<'tcx>,
+        scalar_int: &ScalarInt,
         ty: Ty<'tcx>,
-    ) -> Rc<AbstractValue> {
-        if let rustc_middle::ty::ConstKind::Value(ConstValue::Scalar(Scalar::Int(scalar_int))) = val
-        {
-            let size = scalar_int.size();
-            if size == rustc_target::abi::Size::ZERO {
-                return Rc::new(ConstantDomain::U128(0).into());
-            }
-            let data = scalar_int.to_bits(size).unwrap();
-            if let Ok(ty_and_layout) = self.type_visitor().layout_of(ty) {
-                // Get the structure of the discriminant tag
-                let (discr_signed, discr_bits, discr_index, discr_has_data) =
-                    self.get_discriminator_info(data, &ty_and_layout);
-                trace!(
-                    "discr tag {:?} index {:?} dataful {:?}",
-                    discr_bits,
-                    discr_index,
-                    discr_has_data
-                );
-                let raw_length = ty_and_layout.size.bytes();
-                let raw_alignment = ty_and_layout.align.abi.bytes();
-                let (heap_val, heap_path) = self.bv.get_new_heap_block(
-                    Rc::new((raw_length as u128).into()),
-                    Rc::new((raw_alignment as u128).into()),
-                    false,
-                    ty,
-                );
-                let discr_path = Path::new_discriminant(heap_path.clone());
-                let discr_data = if discr_signed {
-                    self.get_i128_const_val(discr_bits as i128)
-                } else {
-                    self.get_u128_const_val(discr_bits)
-                };
-                self.bv.update_value_at(discr_path, discr_data);
-
-                if discr_has_data {
-                    use std::ops::Deref;
-
-                    // Obtains the name of this variant.
-                    let name = {
-                        let enum_def = ty.ty_adt_def().unwrap();
-                        let variant_def = &enum_def.variants()[discr_index];
-                        variant_def.ident(self.bv.tcx)
-                    };
-                    let name_str = name.as_str();
-                    trace!("discr name {:?}", name_str);
-
-                    // Obtains the path to store the data. For example, for Option<char>,
-                    // the path should be `(x as Some).0`.
-                    let content_path = Path::new_field(
-                        Path::new_qualified(
-                            heap_path,
-                            Rc::new(PathSelector::Downcast(
-                                Rc::from(name_str.deref()),
-                                discr_index.as_usize(),
-                            )),
-                        ),
-                        0,
-                    );
-                    let content_data = self.get_u128_const_val(data);
-                    self.bv.update_value_at(content_path, content_data);
-                }
-
-                return heap_val;
+        target_path: &Rc<Path>,
+    ) -> VariantIdx {
+        let (data, _) = Self::get_scalar_int_data(scalar_int);
+        if let Ok(ty_and_layout) = self.type_visitor().layout_of(ty) {
+            // Get the structure of the discriminant tag
+            let (discr_signed, discr_bits, discr_index, discr_has_data) =
+                self.get_discriminator_info(data, &ty_and_layout);
+            trace!(
+                "discr tag {:?} index {:?} dataful {:?}",
+                discr_bits,
+                discr_index,
+                discr_has_data
+            );
+            let discr_path = Path::new_discriminant(target_path.clone());
+            let discr_data = if discr_signed {
+                self.get_i128_const_val(discr_bits as i128)
             } else {
-                let (heap_val, heap_path) = self.bv.get_new_heap_block(
-                    Rc::new(1u128.into()),
-                    Rc::new(1u128.into()),
-                    false,
-                    ty,
+                self.get_u128_const_val(discr_bits)
+            };
+            self.bv.update_value_at(discr_path, discr_data);
+
+            if discr_has_data {
+                use std::ops::Deref;
+
+                // Obtains the name of this variant.
+                let name = {
+                    let enum_def = ty.ty_adt_def().unwrap();
+                    let variant_def = &enum_def.variants()[discr_index];
+                    variant_def.ident(self.bv.tcx)
+                };
+                let name_str = name.as_str();
+                trace!("discr name {:?}", name_str);
+
+                // Obtains the path to store the data. For example, for Option<char>,
+                // the path should be `(x as Some).0`.
+                let content_path = Path::new_field(
+                    Path::new_qualified(
+                        target_path.clone(),
+                        Rc::new(PathSelector::Downcast(
+                            Rc::from(name_str.deref()),
+                            discr_index.as_usize(),
+                        )),
+                    ),
+                    0,
                 );
-                let discr_path = Path::new_discriminant(heap_path);
-                let discr_data = self.get_u128_const_val(data);
-                self.bv.update_value_at(discr_path, discr_data);
-                return heap_val;
+                let content_data = self.get_u128_const_val(data);
+                self.bv.update_value_at(content_path, content_data);
             }
+            discr_index
+        } else {
+            // todo: is this now unexpected?
+            let discr_path = Path::new_discriminant(target_path.clone());
+            let discr_data = self.get_u128_const_val(data);
+            self.bv.update_value_at(discr_path, discr_data);
+            VariantIdx::new(0)
         }
-        debug!("span: {:?}", self.bv.current_span);
-        debug!("type kind {:?}", ty.kind());
-        debug!("unimplemented constant {:?}", val);
-        Rc::new(ConstantDomain::Unimplemented.into())
     }
 
     fn get_discriminator_info(
@@ -3344,45 +3434,78 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
     }
 
     /// Used only for types with `layout::abi::Scalar` ABI and ZSTs.
+    /// Also used for structs and enums that fit into 16 bytes or less.
     #[logfn_inputs(TRACE)]
-    fn get_constant_from_scalar(
+    fn get_constant_value_from_scalar(
         &mut self,
-        ty: &TyKind<'tcx>,
+        ty: Ty<'tcx>,
         scalar_int: ScalarInt,
-    ) -> &ConstantDomain {
-        let data = scalar_int.to_bits(scalar_int.size()).unwrap();
-        let size = scalar_int.size().bytes();
-        match ty {
-            TyKind::Bool => {
-                if data == 0 {
-                    &ConstantDomain::False
-                } else {
-                    &ConstantDomain::True
+    ) -> Rc<AbstractValue> {
+        let (data, size) = Self::get_scalar_int_data(&scalar_int);
+        Rc::new(
+            match ty.kind() {
+                TyKind::Bool => {
+                    if data == 0 {
+                        &ConstantDomain::False
+                    } else {
+                        &ConstantDomain::True
+                    }
+                }
+                TyKind::Char => self
+                    .bv
+                    .cv
+                    .constant_value_cache
+                    .get_char_for(char::try_from(data as u32).unwrap()),
+                TyKind::Float(..) => match size {
+                    4 => self.bv.cv.constant_value_cache.get_f32_for(data as u32),
+                    _ => self.bv.cv.constant_value_cache.get_f64_for(data as u64),
+                },
+                TyKind::Int(..) => {
+                    let value: i128 = match size {
+                        1 => i128::from(data as i8),
+                        2 => i128::from(data as i16),
+                        4 => i128::from(data as i32),
+                        8 => i128::from(data as i64),
+                        _ => data as i128,
+                    };
+                    self.bv.cv.constant_value_cache.get_i128_for(value)
+                }
+                TyKind::Uint(..) => self.bv.cv.constant_value_cache.get_u128_for(data),
+                TyKind::RawPtr(..) => self.bv.cv.constant_value_cache.get_u128_for(data),
+                TyKind::FnDef(def_id, substs) => {
+                    let specialized_ty = self.type_visitor().specialize_generic_argument_type(
+                        ty,
+                        &self.type_visitor().generic_argument_map,
+                    );
+                    let substs = self
+                        .type_visitor()
+                        .specialize_substs(substs, &self.type_visitor().generic_argument_map);
+                    self.visit_function_reference(*def_id, specialized_ty, Some(substs))
+                }
+                _ => {
+                    let bytes = &data.to_ne_bytes()[0..size];
+                    let (heap_val, target_path) = self.bv.get_new_heap_block(
+                        Rc::new((size as u128).into()),
+                        Rc::new(1u128.into()),
+                        false,
+                        ty,
+                    );
+                    let bytes_left_to_deserialize =
+                        self.deserialize_constant_bytes(target_path, bytes, ty);
+                    if !bytes_left_to_deserialize.is_empty() {
+                        debug!("span: {:?}", self.bv.current_span);
+                        debug!("type kind {:?}", ty.kind());
+                        debug!(
+                            "constant value did not serialize correctly {:?}",
+                            scalar_int
+                        );
+                    }
+                    return heap_val;
                 }
             }
-            TyKind::Char => self
-                .bv
-                .cv
-                .constant_value_cache
-                .get_char_for(char::try_from(data as u32).unwrap()),
-            TyKind::Float(..) => match size {
-                4 => self.bv.cv.constant_value_cache.get_f32_for(data as u32),
-                _ => self.bv.cv.constant_value_cache.get_f64_for(data as u64),
-            },
-            TyKind::Int(..) => {
-                let value: i128 = match size {
-                    1 => i128::from(data as i8),
-                    2 => i128::from(data as i16),
-                    4 => i128::from(data as i32),
-                    8 => i128::from(data as i64),
-                    _ => data as i128,
-                };
-                self.bv.cv.constant_value_cache.get_i128_for(value)
-            }
-            TyKind::Uint(..) => self.bv.cv.constant_value_cache.get_u128_for(data),
-            TyKind::RawPtr(..) => self.bv.cv.constant_value_cache.get_u128_for(data),
-            _ => assume_unreachable!(),
-        }
+            .clone()
+            .into(),
+        )
     }
 
     /// The anonymous type of a function declaration/definition. Each

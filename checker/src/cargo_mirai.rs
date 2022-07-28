@@ -204,6 +204,8 @@ fn call_rustc_or_mirai() {
 }
 
 fn call_mirai() {
+    println!("env {:?}", std::env::var_os("MIRAI_FLAGS"));
+    println!("args {:?}", std::env::args());
     let mut path = std::env::current_exe().expect("current executable path invalid");
     let extension = path.extension().map(|e| e.to_owned());
     path.pop(); // remove the cargo_mirai bit

@@ -372,8 +372,8 @@ impl Z3Solver {
             args: *const z3_sys::Z3_ast,
         ) -> z3_sys::Z3_ast,
     ) -> z3_sys::Z3_ast {
-        let left_ast = self.get_as_bool_z3_ast(&(**left).expression);
-        let right_ast = self.get_as_bool_z3_ast(&(**right).expression);
+        let left_ast = self.get_as_bool_z3_ast(&left.expression);
+        let right_ast = self.get_as_bool_z3_ast(&right.expression);
         unsafe {
             let tmp = vec![left_ast, right_ast];
             operation(self.z3_context, 2, tmp.as_ptr())
@@ -403,9 +403,9 @@ impl Z3Solver {
         consequent: &Rc<AbstractValue>,
         alternate: &Rc<AbstractValue>,
     ) -> z3_sys::Z3_ast {
-        let condition_ast = self.get_as_bool_z3_ast(&(**condition).expression);
-        let consequent_ast = self.get_as_z3_ast(&(**consequent).expression);
-        let alternate_ast = self.get_as_z3_ast(&(**alternate).expression);
+        let condition_ast = self.get_as_bool_z3_ast(&condition.expression);
+        let consequent_ast = self.get_as_z3_ast(&consequent.expression);
+        let alternate_ast = self.get_as_z3_ast(&alternate.expression);
         unsafe {
             z3_sys::Z3_mk_ite(
                 self.z3_context,
@@ -460,8 +460,8 @@ impl Z3Solver {
             (false, 0)
         };
         if num_bits > 0 {
-            let left_ast = self.get_as_bv_z3_ast(&(**left).expression, num_bits);
-            let right_ast = self.get_as_bv_z3_ast(&(**right).expression, num_bits);
+            let left_ast = self.get_as_bv_z3_ast(&left.expression, num_bits);
+            let right_ast = self.get_as_bv_z3_ast(&right.expression, num_bits);
             unsafe {
                 if signed {
                     signed_bit_op(self.z3_context, left_ast, right_ast)
@@ -470,8 +470,8 @@ impl Z3Solver {
                 }
             }
         } else {
-            let (lf, left_ast) = self.get_as_numeric_z3_ast(&(**left).expression);
-            let (rf, right_ast) = self.get_as_numeric_z3_ast(&(**right).expression);
+            let (lf, left_ast) = self.get_as_numeric_z3_ast(&left.expression);
+            let (rf, right_ast) = self.get_as_numeric_z3_ast(&right.expression);
             if lf != rf {
                 warn!("can't encode {:?} relational op {:?}", left, right);
                 return self
@@ -505,8 +505,8 @@ impl Z3Solver {
             0
         };
         if num_bits > 0 {
-            let left_ast = self.get_as_bv_z3_ast(&(**left).expression, num_bits);
-            let right_ast = self.get_as_bv_z3_ast(&(**right).expression, num_bits);
+            let left_ast = self.get_as_bv_z3_ast(&left.expression, num_bits);
+            let right_ast = self.get_as_bv_z3_ast(&right.expression, num_bits);
             unsafe {
                 z3_sys::Z3_mk_not(
                     self.z3_context,
@@ -514,8 +514,8 @@ impl Z3Solver {
                 )
             }
         } else {
-            let (lf, left_ast) = self.get_as_numeric_z3_ast(&(**left).expression);
-            let (rf, right_ast) = self.get_as_numeric_z3_ast(&(**right).expression);
+            let (lf, left_ast) = self.get_as_numeric_z3_ast(&left.expression);
+            let (rf, right_ast) = self.get_as_numeric_z3_ast(&right.expression);
             if lf != rf {
                 warn!("can't encode {:?} != {:?}", left, right);
                 return self
@@ -541,7 +541,7 @@ impl Z3Solver {
 
     #[logfn_inputs(TRACE)]
     fn general_negation(&self, operand: &Rc<AbstractValue>) -> z3_sys::Z3_ast {
-        let (is_float, operand_ast) = self.get_as_numeric_z3_ast(&(**operand).expression);
+        let (is_float, operand_ast) = self.get_as_numeric_z3_ast(&operand.expression);
         unsafe {
             if is_float {
                 z3_sys::Z3_mk_fpa_neg(self.z3_context, operand_ast)
@@ -553,7 +553,7 @@ impl Z3Solver {
 
     #[logfn_inputs(TRACE)]
     fn general_logical_not(&self, operand: &Rc<AbstractValue>) -> z3_sys::Z3_ast {
-        let operand_ast = self.get_as_bool_z3_ast(&(**operand).expression);
+        let operand_ast = self.get_as_bool_z3_ast(&operand.expression);
         unsafe { z3_sys::Z3_mk_not(self.z3_context, operand_ast) }
     }
 
@@ -569,8 +569,8 @@ impl Z3Solver {
     fn general_shr(&self, left: &Rc<AbstractValue>, right: &Rc<AbstractValue>) -> z3_sys::Z3_ast {
         let result_type = left.expression.infer_type();
         let num_bits = u32::from(result_type.bit_length());
-        let left_ast = self.get_as_bv_z3_ast(&(**left).expression, num_bits);
-        let right_ast = self.get_as_bv_z3_ast(&(**right).expression, num_bits);
+        let left_ast = self.get_as_bv_z3_ast(&left.expression, num_bits);
+        let right_ast = self.get_as_bv_z3_ast(&right.expression, num_bits);
         unsafe {
             if result_type.is_signed_integer() {
                 z3_sys::Z3_mk_bvashr(self.z3_context, left_ast, right_ast)
@@ -586,7 +586,7 @@ impl Z3Solver {
         right: &Rc<AbstractValue>,
         result_type: ExpressionType,
     ) -> z3_sys::Z3_ast {
-        let (f, right_ast) = self.get_as_numeric_z3_ast(&(**right).expression);
+        let (f, right_ast) = self.get_as_numeric_z3_ast(&right.expression);
         checked_assume!(!f);
         let num_bits = i32::from(result_type.bit_length());
         unsafe {
@@ -614,25 +614,25 @@ impl Z3Solver {
             );
         }
         let discriminator_type = discriminator.expression.infer_type();
-        let discriminator_ast = self.get_as_z3_ast(&(**discriminator).expression);
-        let default_ast = get_result_ast(&(**default).expression);
+        let discriminator_ast = self.get_as_z3_ast(&discriminator.expression);
+        let default_ast = get_result_ast(&default.expression);
         cases
             .iter()
             .fold(default_ast, |acc_ast, (case_val, case_result)| unsafe {
-                let case_val_type = (**case_val).expression.infer_type();
+                let case_val_type = case_val.expression.infer_type();
                 let case_val_ast = if case_val_type != discriminator_type {
                     debug!(
                         "mismatching discriminator and case_val: {:?} {:?}",
                         discriminator, **case_val
                     );
-                    let sym = self.get_symbol_for(&(**case_val).expression);
+                    let sym = self.get_symbol_for(&case_val.expression);
                     let sort = self.get_sort_for(discriminator_type);
                     z3_sys::Z3_mk_const(self.z3_context, sym, sort)
                 } else {
-                    self.get_as_z3_ast(&(**case_val).expression)
+                    self.get_as_z3_ast(&case_val.expression)
                 };
                 let cond_ast = z3_sys::Z3_mk_eq(self.z3_context, discriminator_ast, case_val_ast);
-                let case_result_ast = get_result_ast(&(**case_result).expression);
+                let case_result_ast = get_result_ast(&case_result.expression);
                 z3_sys::Z3_mk_ite(self.z3_context, cond_ast, case_result_ast, acc_ast)
             })
     }
@@ -1171,8 +1171,8 @@ impl Z3Solver {
             args: *const z3_sys::Z3_ast,
         ) -> z3_sys::Z3_ast,
     ) -> (bool, z3_sys::Z3_ast) {
-        let (lf, left_ast) = self.get_as_numeric_z3_ast(&(**left).expression);
-        let (rf, right_ast) = self.get_as_numeric_z3_ast(&(**right).expression);
+        let (lf, left_ast) = self.get_as_numeric_z3_ast(&left.expression);
+        let (rf, right_ast) = self.get_as_numeric_z3_ast(&right.expression);
         if lf != rf {
             warn!("can't encode {:?} numeric var arg op {:?}", left, right);
             let vt = left.expression.infer_type();
@@ -1206,8 +1206,8 @@ impl Z3Solver {
             args: *const z3_sys::Z3_ast,
         ) -> z3_sys::Z3_ast,
     ) -> (bool, z3_sys::Z3_ast) {
-        let (lf, left_ast) = self.get_as_numeric_z3_ast(&(**left).expression);
-        let (rf, right_ast) = self.get_as_numeric_z3_ast(&(**right).expression);
+        let (lf, left_ast) = self.get_as_numeric_z3_ast(&left.expression);
+        let (rf, right_ast) = self.get_as_numeric_z3_ast(&right.expression);
         checked_assume!(!(lf || rf));
         unsafe {
             let tmp = vec![left_ast, right_ast];
@@ -1231,8 +1231,8 @@ impl Z3Solver {
         left: &Rc<AbstractValue>,
         right: &Rc<AbstractValue>,
     ) -> (bool, z3_sys::Z3_ast) {
-        let (lf, left_ast) = self.get_as_numeric_z3_ast(&(**left).expression);
-        let (rf, right_ast) = self.get_as_numeric_z3_ast(&(**right).expression);
+        let (lf, left_ast) = self.get_as_numeric_z3_ast(&left.expression);
+        let (rf, right_ast) = self.get_as_numeric_z3_ast(&right.expression);
         if lf != rf {
             warn!("can't encode {:?} rem {:?}", left, right);
             let vt = left.expression.infer_type();
@@ -1284,8 +1284,8 @@ impl Z3Solver {
             t2: z3_sys::Z3_ast,
         ) -> z3_sys::Z3_ast,
     ) -> (bool, z3_sys::Z3_ast) {
-        let (lf, left_ast) = self.get_as_numeric_z3_ast(&(**left).expression);
-        let (rf, right_ast) = self.get_as_numeric_z3_ast(&(**right).expression);
+        let (lf, left_ast) = self.get_as_numeric_z3_ast(&left.expression);
+        let (rf, right_ast) = self.get_as_numeric_z3_ast(&right.expression);
         if lf != rf {
             warn!("can't encode {:?} numeric op {:?}", left, right);
             let vt = left.expression.infer_type();
@@ -1313,8 +1313,8 @@ impl Z3Solver {
         right: &Rc<AbstractValue>,
     ) -> (bool, z3_sys::Z3_ast) {
         unsafe {
-            let (lf, left_ast) = self.get_as_numeric_z3_ast(&(**left).expression);
-            let (rf, right_ast) = self.get_as_numeric_z3_ast(&(**right).expression);
+            let (lf, left_ast) = self.get_as_numeric_z3_ast(&left.expression);
+            let (rf, right_ast) = self.get_as_numeric_z3_ast(&right.expression);
             if lf != rf {
                 warn!("can't encode {:?} join {:?}", left, right);
                 let vt = left.expression.infer_type();
@@ -1545,9 +1545,9 @@ impl Z3Solver {
         consequent: &Rc<AbstractValue>,
         alternate: &Rc<AbstractValue>,
     ) -> (bool, z3_sys::Z3_ast) {
-        let condition_ast = self.get_as_bool_z3_ast(&(**condition).expression);
-        let (cf, consequent_ast) = self.get_as_numeric_z3_ast(&(**consequent).expression);
-        let (af, alternate_ast) = self.get_as_numeric_z3_ast(&(**alternate).expression);
+        let condition_ast = self.get_as_bool_z3_ast(&condition.expression);
+        let (cf, consequent_ast) = self.get_as_numeric_z3_ast(&consequent.expression);
+        let (af, alternate_ast) = self.get_as_numeric_z3_ast(&alternate.expression);
         checked_assume_eq!(cf, af);
         unsafe {
             (
@@ -1564,7 +1564,7 @@ impl Z3Solver {
 
     #[logfn_inputs(TRACE)]
     fn numeric_neg(&self, operand: &Rc<AbstractValue>) -> (bool, z3_sys::Z3_ast) {
-        let (is_float, operand_ast) = self.get_as_numeric_z3_ast(&(**operand).expression);
+        let (is_float, operand_ast) = self.get_as_numeric_z3_ast(&operand.expression);
         unsafe {
             if is_float {
                 (true, z3_sys::Z3_mk_fpa_neg(self.z3_context, operand_ast))
@@ -1594,8 +1594,8 @@ impl Z3Solver {
         left: &Rc<AbstractValue>,
         right: &Rc<AbstractValue>,
     ) -> (bool, z3_sys::Z3_ast) {
-        let (lf, left_ast) = self.get_as_numeric_z3_ast(&(**left).expression);
-        let (rf, right_ast) = self.get_as_numeric_z3_ast(&(**right).expression);
+        let (lf, left_ast) = self.get_as_numeric_z3_ast(&left.expression);
+        let (rf, right_ast) = self.get_as_numeric_z3_ast(&right.expression);
         checked_assume!(!(lf || rf));
         unsafe {
             let right_power = z3_sys::Z3_mk_power(self.z3_context, self.two, right_ast);
@@ -1610,8 +1610,8 @@ impl Z3Solver {
         left: &Rc<AbstractValue>,
         right: &Rc<AbstractValue>,
     ) -> (bool, z3_sys::Z3_ast) {
-        let (lf, left_ast) = self.get_as_numeric_z3_ast(&(**left).expression);
-        let (rf, right_ast) = self.get_as_numeric_z3_ast(&(**right).expression);
+        let (lf, left_ast) = self.get_as_numeric_z3_ast(&left.expression);
+        let (rf, right_ast) = self.get_as_numeric_z3_ast(&right.expression);
         checked_assume!(!(lf || rf));
         unsafe {
             let right_power = z3_sys::Z3_mk_power(self.z3_context, self.two, right_ast);
@@ -1699,9 +1699,9 @@ impl Z3Solver {
                 consequent,
                 alternate,
             } => {
-                let condition_ast = self.get_as_bool_z3_ast(&(**condition).expression);
-                let consequent_ast = self.get_as_bool_z3_ast(&(**consequent).expression);
-                let alternate_ast = self.get_as_bool_z3_ast(&(**alternate).expression);
+                let condition_ast = self.get_as_bool_z3_ast(&condition.expression);
+                let consequent_ast = self.get_as_bool_z3_ast(&consequent.expression);
+                let alternate_ast = self.get_as_bool_z3_ast(&alternate.expression);
                 unsafe {
                     z3_sys::Z3_mk_ite(
                         self.z3_context,
@@ -1896,14 +1896,14 @@ impl Z3Solver {
             t2: z3_sys::Z3_ast,
         ) -> z3_sys::Z3_ast,
     ) -> z3_sys::Z3_ast {
-        let left_ast = self.get_as_bv_z3_ast(&(**left).expression, num_bits);
-        let right_ast = self.get_as_bv_z3_ast(&(**right).expression, num_bits);
+        let left_ast = self.get_as_bv_z3_ast(&left.expression, num_bits);
+        let right_ast = self.get_as_bv_z3_ast(&right.expression, num_bits);
         unsafe { operation(self.z3_context, left_ast, right_ast) }
     }
 
     #[logfn_inputs(TRACE)]
     fn bv_neg(&self, num_bits: u32, operand: &Rc<AbstractValue>) -> z3_sys::Z3_ast {
-        let ast = self.get_as_bv_z3_ast(&(**operand).expression, num_bits);
+        let ast = self.get_as_bv_z3_ast(&operand.expression, num_bits);
         unsafe { z3_sys::Z3_mk_bvneg(self.z3_context, ast) }
     }
 
@@ -1914,7 +1914,7 @@ impl Z3Solver {
         operand: &Rc<AbstractValue>,
         result_type: ExpressionType,
     ) -> z3_sys::Z3_ast {
-        let ast = self.get_as_bv_z3_ast(&(**operand).expression, num_bits);
+        let ast = self.get_as_bv_z3_ast(&operand.expression, num_bits);
         unsafe { z3_sys::Z3_mk_bvnot(self.z3_context, ast) }
     }
 
@@ -1938,8 +1938,8 @@ impl Z3Solver {
     ) -> z3_sys::Z3_ast {
         let num_bits = u32::from(result_type.bit_length());
         let is_signed = result_type.is_signed_integer();
-        let left_bv = self.get_as_bv_z3_ast(&(**left).expression, num_bits);
-        let right_bv = self.get_as_bv_z3_ast(&(**right).expression, num_bits);
+        let left_bv = self.get_as_bv_z3_ast(&left.expression, num_bits);
+        let right_bv = self.get_as_bv_z3_ast(&right.expression, num_bits);
         unsafe {
             let does_not_overflow = no_overflow(self.z3_context, left_bv, right_bv, is_signed);
             if is_signed {
@@ -2035,9 +2035,9 @@ impl Z3Solver {
         consequent: &Rc<AbstractValue>,
         alternate: &Rc<AbstractValue>,
     ) -> z3_sys::Z3_ast {
-        let condition_ast = self.get_as_bool_z3_ast(&(**condition).expression);
-        let consequent_ast = self.get_as_bv_z3_ast(&(**consequent).expression, num_bits);
-        let alternate_ast = self.get_as_bv_z3_ast(&(**alternate).expression, num_bits);
+        let condition_ast = self.get_as_bool_z3_ast(&condition.expression);
+        let consequent_ast = self.get_as_bv_z3_ast(&consequent.expression, num_bits);
+        let alternate_ast = self.get_as_bv_z3_ast(&alternate.expression, num_bits);
         unsafe {
             z3_sys::Z3_mk_ite(
                 self.z3_context,
@@ -2055,8 +2055,8 @@ impl Z3Solver {
         right: &Rc<AbstractValue>,
         num_bits: u32,
     ) -> z3_sys::Z3_ast {
-        let left_ast = self.get_as_bv_z3_ast(&(**left).expression, num_bits);
-        let right_ast = self.get_as_bv_z3_ast(&(**right).expression, num_bits);
+        let left_ast = self.get_as_bv_z3_ast(&left.expression, num_bits);
+        let right_ast = self.get_as_bv_z3_ast(&right.expression, num_bits);
         unsafe {
             let sym = self.get_symbol_for(self);
             let condition_ast = z3_sys::Z3_mk_const(self.z3_context, sym, self.bool_sort);
@@ -2081,8 +2081,8 @@ impl Z3Solver {
         right: &Rc<AbstractValue>,
     ) -> z3_sys::Z3_ast {
         let left_type = left.expression.infer_type();
-        let left_ast = self.get_as_bv_z3_ast(&(**left).expression, num_bits);
-        let right_ast = self.get_as_bv_z3_ast(&(**right).expression, num_bits);
+        let left_ast = self.get_as_bv_z3_ast(&left.expression, num_bits);
+        let right_ast = self.get_as_bv_z3_ast(&right.expression, num_bits);
         unsafe {
             if left_type.is_signed_integer() {
                 z3_sys::Z3_mk_bvashr(self.z3_context, left_ast, right_ast)
@@ -2104,14 +2104,14 @@ impl Z3Solver {
     {
         let ty = discriminator.expression.infer_type();
         let num_bits = u32::from(ty.bit_length());
-        let discriminator_ast = self.get_as_bv_z3_ast(&(**discriminator).expression, num_bits);
-        let default_ast = get_result_ast(&(**default).expression);
+        let discriminator_ast = self.get_as_bv_z3_ast(&discriminator.expression, num_bits);
+        let default_ast = get_result_ast(&default.expression);
         cases
             .iter()
             .fold(default_ast, |acc_ast, (case_val, case_result)| unsafe {
-                let case_val_ast = self.get_as_bv_z3_ast(&(**case_val).expression, num_bits);
+                let case_val_ast = self.get_as_bv_z3_ast(&case_val.expression, num_bits);
                 let cond_ast = z3_sys::Z3_mk_eq(self.z3_context, discriminator_ast, case_val_ast);
-                let case_result_ast = get_result_ast(&(**case_result).expression);
+                let case_result_ast = get_result_ast(&case_result.expression);
                 z3_sys::Z3_mk_ite(self.z3_context, cond_ast, case_result_ast, acc_ast)
             })
     }
