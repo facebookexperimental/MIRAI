@@ -2131,6 +2131,31 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             }
         }
 
+        // [if (if c { x } else { y }) { if c { a } else { b }} else { d }] ->
+        // if c { if x { a } else { d } } else { if y { b } else { d } }
+        if let Expression::ConditionalExpression {
+            condition: c,
+            consequent: x,
+            alternate: y,
+        } = &self.expression
+        {
+            if let Expression::ConditionalExpression {
+                condition: c2,
+                consequent: a,
+                alternate: b,
+            } = &consequent.expression
+            {
+                let d = &alternate;
+                if c.eq(c2) && d.expression_size <= c.expression_size {
+                    // Duplicate d and promote a single copy of c.
+                    // Also, promoting c exposes it to shallow path refinement (see below)
+                    let xad = x.conditional_expression(a.clone(), d.clone());
+                    let ybd = y.conditional_expression(b.clone(), d.clone());
+                    return c.conditional_expression(xad, ybd);
+                }
+            }
+        }
+
         // if self { consequent } else { alternate } implies self in the consequent and !self in the alternate
         if !matches!(self.expression, Expression::Or { .. }) {
             if consequent.expression_size <= k_limits::MAX_EXPRESSION_SIZE / 10 {
@@ -6323,13 +6348,27 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 }
             }
         }
+
+        let mut value = self.clone();
+
+        // If the path condition is a conjunction, refine twice
+        if let Expression::And { left, right } = &path_condition.expression {
+            if left.as_bool_if_known().is_none() {
+                value = value.refine_with(left, depth);
+            }
+            if right.as_bool_if_known().is_none() {
+                value = value.refine_with(right, depth);
+            }
+            return value;
+        }
+
         // Traverse the self expression, looking for recursive refinement opportunities.
         // Important, keep the traversal as trivial as possible and put optimizations in
         // the transfer functions. Also, keep the transfer functions constant in cost as
         // much as possible. Any time they are not, this function becomes quadratic and
         // performance becomes terrible.
-        match &self.expression {
-            Expression::Bottom | Expression::Top => self.clone(),
+        match &value.expression {
+            Expression::Bottom | Expression::Top => value,
             Expression::Add { left, right } => left
                 .refine_with(path_condition, depth + 1)
                 .addition(right.refine_with(path_condition, depth + 1)),
@@ -6364,7 +6403,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             } => operand
                 .refine_with(path_condition, depth + 1)
                 .cast(*target_type),
-            Expression::CompileTimeConstant(..) => self.clone(),
+            Expression::CompileTimeConstant(..) => value,
             Expression::ConditionalExpression {
                 condition,
                 consequent,
@@ -6416,7 +6455,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             } => operand
                 .refine_with(path_condition, depth + 1)
                 .intrinsic_bit_vector_unary(*bit_length, *name),
-            Expression::HeapBlock { .. } => self.clone(),
+            Expression::HeapBlock { .. } => value,
             Expression::HeapBlockLayout {
                 length,
                 alignment,
@@ -6493,7 +6532,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::Reference(..) | Expression::InitialParameterValue { .. } => {
                 // We could refine their paths, which will increase precision, but it does not
                 // currently seem cost-effective. This does not affect soundness.
-                self.clone()
+                value
             }
             Expression::Rem { left, right } => left
                 .refine_with(path_condition, depth + 1)
@@ -6568,7 +6607,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     *result_type,
                     path.clone(),
                 ),
-            Expression::UnknownModelField { .. } => self.clone(),
+            Expression::UnknownModelField { .. } => value,
             Expression::UnknownTagCheck {
                 operand,
                 tag,
@@ -6581,13 +6620,13 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             Expression::UnknownTagField { .. } => self.clone(),
             Expression::Variable { var_type, .. } => {
                 if *var_type == ExpressionType::Bool {
-                    if path_condition.implies(self) {
+                    if path_condition.implies(&value) {
                         return Rc::new(TRUE);
-                    } else if path_condition.implies_not(self) {
+                    } else if path_condition.implies_not(&value) {
                         return Rc::new(FALSE);
                     }
                 }
-                self.clone()
+                value
             }
             Expression::WidenedJoin { path, operand } => {
                 operand.refine_with(path_condition, depth + 1).widen(path)
