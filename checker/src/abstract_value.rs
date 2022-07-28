@@ -2159,12 +2159,12 @@ impl AbstractValueTrait for Rc<AbstractValue> {
         // if self { consequent } else { alternate } implies self in the consequent and !self in the alternate
         if !matches!(self.expression, Expression::Or { .. }) {
             if consequent.expression_size <= k_limits::MAX_EXPRESSION_SIZE / 10 {
-                consequent = consequent.refine_with(self, 35);
+                consequent = consequent.refine_with(self, 30);
             } else if consequent.expression_size <= k_limits::MAX_EXPRESSION_SIZE / 5 {
-                consequent = consequent.refine_with(self, 5);
+                consequent = consequent.refine_with(self, 35);
             }
             if alternate.expression_size < k_limits::MAX_EXPRESSION_SIZE / 10 {
-                alternate = alternate.refine_with(&not_self, 35);
+                alternate = alternate.refine_with(&not_self, 30);
             } else if let Expression::ConditionalExpression {
                 condition: c,
                 consequent: x,
@@ -2183,7 +2183,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     }
                 }
             } else if alternate.expression_size < k_limits::MAX_EXPRESSION_SIZE / 5 {
-                alternate = alternate.refine_with(&not_self, 5);
+                alternate = alternate.refine_with(&not_self, 35);
             }
         }
 
@@ -4583,6 +4583,20 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     {
                         if x1.eq(x2) && y1.eq(y2) {
                             return nx.clone();
+                        }
+                    }
+                }
+                // [(x && y) || !(x && !y))] -> y || !x
+                (Expression::And { left: x, right: y }, Expression::LogicalNot { operand })
+                    if matches!(operand.expression, Expression::And { .. }) =>
+                {
+                    if let Expression::And {
+                        left: x1,
+                        right: ny,
+                    } = &operand.expression
+                    {
+                        if x.eq(x1) && y.inverse_implies(ny) {
+                            return y.or(x.logical_not());
                         }
                     }
                 }
