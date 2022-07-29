@@ -31,11 +31,14 @@ use crate::fixed_point_visitor::FixedPointVisitor;
 use crate::options::DiagLevel;
 use crate::path::{Path, PathEnum, PathSelector};
 use crate::path::{PathRefinement, PathRoot};
+#[cfg(not(feature = "z3"))]
+use crate::smt_solver::SolverStub;
 use crate::smt_solver::{SmtResult, SmtSolver};
 use crate::summaries;
 use crate::summaries::{Precondition, Summary};
 use crate::tag_domain::Tag;
 use crate::type_visitor::{self, TypeCache, TypeVisitor};
+#[cfg(feature = "z3")]
 use crate::z3_solver::Z3Solver;
 use crate::{k_limits, utils};
 
@@ -69,6 +72,9 @@ pub struct BodyVisitor<'analysis, 'compilation, 'tcx> {
     pub post_condition_block: Option<mir::BasicBlock>,
     pub preconditions: Vec<Precondition>,
     pub fresh_variable_offset: usize,
+    #[cfg(not(feature = "z3"))]
+    pub smt_solver: SolverStub,
+    #[cfg(feature = "z3")]
     pub smt_solver: Z3Solver,
     pub block_to_call: HashMap<mir::Location, DefId>,
     pub treat_as_foreign: bool,
@@ -82,6 +88,16 @@ impl<'analysis, 'compilation, 'tcx> Debug for BodyVisitor<'analysis, 'compilatio
 }
 
 impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
+    #[cfg(feature = "z3")]
+    fn get_solver() -> Z3Solver {
+        Z3Solver::new()
+    }
+
+    #[cfg(not(feature = "z3"))]
+    fn get_solver() -> SolverStub {
+        SolverStub::default()
+    }
+
     pub fn new(
         crate_visitor: &'analysis mut CrateVisitor<'compilation, 'tcx>,
         def_id: DefId,
@@ -125,7 +141,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
             post_condition_block: None,
             preconditions: Vec::new(),
             fresh_variable_offset: 0,
-            smt_solver: Z3Solver::default(),
+            smt_solver: Self::get_solver(),
             block_to_call: HashMap::default(),
             treat_as_foreign: false,
             type_visitor: TypeVisitor::new(def_id, mir, tcx, type_cache),

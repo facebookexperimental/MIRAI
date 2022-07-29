@@ -117,7 +117,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: install
-          args: --path ./checker
+          args: --path ./checker --no-default-features
 
       - name: Run MIRAI on MIRAI
         run: |
@@ -152,7 +152,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: install
-          args: --path ./checker
+          args: --path ./checker --no-default-features
 
       - name: Run MIRAI on MIRAI
         run: |
