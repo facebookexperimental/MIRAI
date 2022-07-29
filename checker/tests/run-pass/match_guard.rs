@@ -16,8 +16,7 @@ impl Path {
     pub fn refine_parameters(&self, arguments: &[(i32, AbstractValue)]) -> i32 {
         match self {
             Path::LocalVariable { ordinal } if 0 < *ordinal && *ordinal <= arguments.len() => {
-                //todo: fix this
-                arguments[*ordinal - 1].0 //~ possible attempt to subtract with overflow
+                arguments[*ordinal - 1].0
             }
             _ => 0,
         }

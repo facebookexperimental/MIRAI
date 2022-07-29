@@ -18,8 +18,7 @@ fn do_join(cond: bool) {
     {
         let mut c = if cond { &mut a } else { &mut b };
         (&mut c)[0] = 3;
-        // todo: fix this
-        verify!(c[0] == 3); //~ possible false verification condition
+        verify!(c[0] == 3);
     }
     verify!(a[0] == if cond { 3 } else { 1 });
     verify!(b[0] == if cond { 2 } else { 3 });

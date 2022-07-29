@@ -1164,7 +1164,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             let this_block = self.bv.current_location.block;
             match (self.bv.post_condition.clone(), self.bv.post_condition_block) {
                 (Some(last_cond), Some(last_block)) => {
-                    let dominators = self.bv.mir.dominators();
+                    let dominators = self.bv.mir.basic_blocks.dominators();
                     if dominators.is_dominated_by(this_block, last_block) {
                         // We can extend the last condition as all paths to this condition
                         // lead over it
@@ -1693,6 +1693,9 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             }
             mir::Rvalue::ShallowInitBox(operand, ty) => {
                 self.visit_shallow_init_box(path, operand, *ty);
+            }
+            mir::Rvalue::CopyForDeref(place) => {
+                self.visit_used_copy(path, place);
             }
         }
     }
@@ -2604,7 +2607,8 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             // See the `ScalarInt` documentation for how `ScalarInt` guarantees that equal values
             // of these types have the same representation.
             rustc_middle::ty::ConstKind::Value(ValTree::Leaf(scalar_int)) => {
-                self.get_constant_value_from_scalar(lty, *scalar_int)
+                let (data, size) = Self::get_scalar_int_data(scalar_int);
+                self.get_constant_value_from_scalar(lty, data, size)
             }
             // The fields of any kind of aggregate. Structs, tuples and arrays are represented by
             // listing their fields' values in order.
@@ -2663,7 +2667,8 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
     ) {
         match val_tree {
             ValTree::Leaf(scalar_int) => {
-                let const_value = self.get_constant_value_from_scalar(ty, *scalar_int);
+                let (data, size) = Self::get_scalar_int_data(scalar_int);
+                let const_value = self.get_constant_value_from_scalar(ty, data, size);
                 self.bv.update_value_at(target_path, const_value);
             }
             ValTree::Branch(val_trees) => match ty.kind() {
@@ -2727,11 +2732,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
 
     fn get_scalar_int_data(scalar_int: &ScalarInt) -> (u128, usize) {
         let size = scalar_int.size();
-        let data: u128 = if *scalar_int == ScalarInt::ZST {
-            0
-        } else {
-            scalar_int.to_bits(size).unwrap()
-        };
+        let data: u128 = scalar_int.to_bits(size).unwrap();
         (data, size.bytes() as usize)
     }
 
@@ -2743,7 +2744,8 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         match val {
             // The raw bytes of a simple value.
             ConstValue::Scalar(Scalar::Int(scalar_int)) => {
-                self.get_constant_value_from_scalar(lty, scalar_int)
+                let (data, size) = Self::get_scalar_int_data(&scalar_int);
+                self.get_constant_value_from_scalar(lty, data, size)
             }
 
             // A pointer into an `Allocation`. An `Allocation` in the `memory` module has a list of
@@ -2754,7 +2756,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             // The size is always the pointer size of the current target, but this is not information
             // that we always have readily available.
             ConstValue::Scalar(Scalar::Ptr(ptr, _size)) => {
-                match self.bv.tcx.get_global_alloc(ptr.provenance) {
+                match self.bv.tcx.try_get_global_alloc(ptr.provenance) {
                     Some(GlobalAlloc::Memory(alloc)) => {
                         let alloc_len = alloc.inner().len() as u64;
                         let offset_bytes = ptr.into_parts().1.bytes();
@@ -2840,9 +2842,22 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     Some(GlobalAlloc::Static(def_id)) => AbstractValue::make_reference(
                         self.bv.import_static(Path::new_static(self.bv.tcx, def_id)),
                     ),
+                    Some(GlobalAlloc::VTable(_, _)) => {
+                        self.bv
+                            .get_new_heap_block(
+                                Rc::new(0u128.into()),
+                                Rc::new(8u128.into()),
+                                false,
+                                lty,
+                            )
+                            .0
+                    }
                     None => unreachable!("missing allocation {:?}", ptr.provenance),
                 }
             }
+
+            // Only used when lty is a Zero Sized type.
+            ConstValue::ZeroSized => self.get_constant_value_from_scalar(lty, 0, 0),
 
             // Used only for `&[u8]` and `&str`
             ConstValue::Slice { data, start, end } => {
@@ -3439,9 +3454,9 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
     fn get_constant_value_from_scalar(
         &mut self,
         ty: Ty<'tcx>,
-        scalar_int: ScalarInt,
+        data: u128,
+        size: usize,
     ) -> Rc<AbstractValue> {
-        let (data, size) = Self::get_scalar_int_data(&scalar_int);
         Rc::new(
             match ty.kind() {
                 TyKind::Bool => {
@@ -3496,8 +3511,8 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         debug!("span: {:?}", self.bv.current_span);
                         debug!("type kind {:?}", ty.kind());
                         debug!(
-                            "constant value did not serialize correctly {:?}",
-                            scalar_int
+                            "constant value did not serialize correctly {:?} {:?}",
+                            data, size
                         );
                     }
                     return heap_val;

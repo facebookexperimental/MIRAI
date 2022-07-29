@@ -46,7 +46,7 @@ impl<'fixed, 'analysis, 'compilation, 'tcx>
     pub fn new(
         body_visitor: &'fixed mut BodyVisitor<'analysis, 'compilation, 'tcx>,
     ) -> FixedPointVisitor<'fixed, 'analysis, 'compilation, 'tcx> {
-        let dominators = body_visitor.mir.dominators();
+        let dominators = body_visitor.mir.basic_blocks.dominators();
         let (block_indices, loop_anchors) = get_sorted_block_indices(body_visitor.mir, &dominators);
         // in_state[bb] is the join (or widening) of the out_state values of each predecessor of bb
         let mut in_state: HashMap<mir::BasicBlock, Environment> = HashMap::new();
@@ -245,7 +245,7 @@ impl<'fixed, 'analysis, 'compilation, 'tcx>
         iteration_count: usize,
     ) -> Environment {
         let mut predecessor_states_and_conditions: Vec<(Environment, Rc<AbstractValue>)> =
-            self.bv.mir.predecessors()[bb]
+            self.bv.mir.basic_blocks.predecessors()[bb]
                 .iter()
                 .filter_map(|pred_bb| {
                     // If the predecessor can only be reached via bb then bb and pred_bb are
@@ -349,7 +349,7 @@ fn add_predecessors_then_root_block<'tcx>(
     if !already_added.insert(root_block) {
         return;
     }
-    for pred_bb in mir.predecessors()[root_block].iter() {
+    for pred_bb in mir.basic_blocks.predecessors()[root_block].iter() {
         if already_added.contains(pred_bb) {
             continue;
         };

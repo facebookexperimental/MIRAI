@@ -6,14 +6,13 @@
 
 // A test that checks that a fat pointer can be tracked over a union with a thin pointer.
 
-#![feature(untagged_unions)]
-
 use mirai_annotations::*;
+use std::mem::ManuallyDrop;
 
 #[repr(C)]
 pub union FatUnion<T> {
     pub thin: *const [T],
-    pub fat: FatPtr<T>,
+    pub fat: ManuallyDrop<FatPtr<T>>,
 }
 
 #[repr(C)]
@@ -25,7 +24,7 @@ pub struct FatPtr<T> {
 pub const fn magic_mirror<T>(ptr: *const T, fat: usize) -> *const [T] {
     unsafe {
         FatUnion {
-            fat: FatPtr { ptr, fat },
+            fat: ManuallyDrop::new(FatPtr { ptr, fat }),
         }
         .thin
     }

@@ -80,64 +80,64 @@ insert Edge(0,0,1);
 insert Edge(1,0,2);
 insert Edge(2,0,3);
 insert Edge(3,0,4);
-insert EdgeType(0,0);
-insert EdgeType(1,5);
-insert EdgeType(2,19);
-insert EdgeType(3,22);
-insert EqType(0,25);
-insert EqType(0,26);
-insert EqType(0,5);
-insert EqType(19,22);
-insert EqType(19,24);
-insert EqType(24,22);
-insert EqType(26,25);
-insert EqType(5,25);
-insert EqType(5,26);
-insert Member(19,0);
-insert Member(19,25);
-insert Member(19,26);
-insert Member(19,5);
-insert Member(22,0);
-insert Member(22,25);
-insert Member(22,26);
-insert Member(22,5);
-insert Member(23,24);
-insert Member(24,0);
-insert Member(24,25);
-insert Member(24,26);
-insert Member(24,5);
+insert EdgeType(0,3);
+insert EdgeType(1,8);
+insert EdgeType(2,22);
+insert EdgeType(3,25);
+insert EqType(22,25);
+insert EqType(22,27);
+insert EqType(27,25);
+insert EqType(29,28);
+insert EqType(3,28);
+insert EqType(3,29);
+insert EqType(3,8);
+insert EqType(8,28);
+insert EqType(8,29);
+insert Member(22,28);
+insert Member(22,29);
+insert Member(22,3);
+insert Member(22,8);
+insert Member(25,28);
+insert Member(25,29);
+insert Member(25,3);
+insert Member(25,8);
+insert Member(26,27);
+insert Member(27,28);
+insert Member(27,29);
+insert Member(27,3);
+insert Member(27,8);
 commit;
 */
 
 /* EXPECTED:TYPEMAP
 {
-  "0": "&Foo",
-  "5": "&mut Foo",
-  "19": "&[Foo]",
-  "22": "std::vec::Vec<Foo>",
-  "23": "Bar",
-  "24": "[test::Foo]",
-  "25": "test::Foo",
-  "26": "Foo"
+  "3": "&Foo",
+  "8": "&mut Foo",
+  "22": "&[Foo]",
+  "25": "std::vec::Vec<Foo>",
+  "26": "Bar",
+  "27": "[test::Foo]",
+  "28": "test::Foo",
+  "29": "Foo"
 }
 */
 
 /* EXPECTED:CALL_SITES{
   "files": [
     "tests/call_graph/type_relations.rs",
-    "/rustc/7665c3543079ebc3710b676d0fd6951bedfd4b29/library/core/src/fmt/mod.rs",
-    "/rustc/7665c3543079ebc3710b676d0fd6951bedfd4b29/library/core/src/slice/mod.rs",
-    "/rustc/7665c3543079ebc3710b676d0fd6951bedfd4b29/library/core/src/slice/iter/macros.rs",
-    "/rustc/7665c3543079ebc3710b676d0fd6951bedfd4b29/library/alloc/src/vec/mod.rs",
-    "/rustc/7665c3543079ebc3710b676d0fd6951bedfd4b29/library/std/src/io/stdio.rs",
-    "/rustc/7665c3543079ebc3710b676d0fd6951bedfd4b29/library/alloc/src/boxed.rs",
-    "/rustc/7665c3543079ebc3710b676d0fd6951bedfd4b29/library/core/src/intrinsics.rs",
-    "/rustc/7665c3543079ebc3710b676d0fd6951bedfd4b29/library/core/src/slice/iter.rs",
-    "/rustc/7665c3543079ebc3710b676d0fd6951bedfd4b29/library/core/src/ptr/non_null.rs",
-    "/rustc/7665c3543079ebc3710b676d0fd6951bedfd4b29/library/alloc/src/alloc.rs",
-    "/rustc/7665c3543079ebc3710b676d0fd6951bedfd4b29/library/core/src/convert/mod.rs",
-    "/rustc/7665c3543079ebc3710b676d0fd6951bedfd4b29/library/alloc/src/slice.rs",
-    "/rustc/7665c3543079ebc3710b676d0fd6951bedfd4b29/library/core/src/ptr/mod.rs"
+    "/rustc/d394408fb38c4de61f765a3ed5189d2731a1da91/library/core/src/fmt/mod.rs",
+    "/rustc/d394408fb38c4de61f765a3ed5189d2731a1da91/library/core/src/slice/mod.rs",
+    "/rustc/d394408fb38c4de61f765a3ed5189d2731a1da91/library/core/src/slice/iter/macros.rs",
+    "/rustc/d394408fb38c4de61f765a3ed5189d2731a1da91/library/alloc/src/vec/mod.rs",
+    "/rustc/d394408fb38c4de61f765a3ed5189d2731a1da91/library/std/src/io/stdio.rs",
+    "/rustc/d394408fb38c4de61f765a3ed5189d2731a1da91/library/alloc/src/boxed.rs",
+    "/rustc/d394408fb38c4de61f765a3ed5189d2731a1da91/library/core/src/intrinsics.rs",
+    "/rustc/d394408fb38c4de61f765a3ed5189d2731a1da91/library/core/src/slice/iter.rs",
+    "/rustc/d394408fb38c4de61f765a3ed5189d2731a1da91/library/core/src/ptr/non_null.rs",
+    "/rustc/d394408fb38c4de61f765a3ed5189d2731a1da91/library/alloc/src/alloc.rs",
+    "/rustc/d394408fb38c4de61f765a3ed5189d2731a1da91/library/core/src/convert/mod.rs",
+    "/rustc/d394408fb38c4de61f765a3ed5189d2731a1da91/library/alloc/src/slice.rs",
+    "/rustc/d394408fb38c4de61f765a3ed5189d2731a1da91/library/core/src/ptr/mod.rs"
   ],
   "callables": [
     {
@@ -227,13 +227,13 @@ commit;
     {
       "name": "alloc.boxed.implement_alloc_boxed_Box_generic_par_T_generic_par_A.into_unique",
       "file_index": 6,
-      "first_line": 1119,
+      "first_line": 1120,
       "local": true
     },
     {
       "name": "core.intrinsics.foreign_1.assert_inhabited",
       "file_index": 7,
-      "first_line": 1168,
+      "first_line": 1169,
       "local": false
     },
     {
@@ -245,7 +245,7 @@ commit;
     {
       "name": "core.intrinsics.foreign_1.ptr_guaranteed_eq",
       "file_index": 7,
-      "first_line": 2233,
+      "first_line": 2240,
       "local": false
     },
     {
@@ -269,7 +269,7 @@ commit;
     {
       "name": "alloc.alloc.implement.alloc_impl",
       "file_index": 10,
-      "first_line": 166,
+      "first_line": 172,
       "local": true
     },
     {
@@ -281,7 +281,7 @@ commit;
     {
       "name": "core.intrinsics.foreign_1.assume",
       "file_index": 7,
-      "first_line": 1062,
+      "first_line": 1063,
       "local": false
     },
     {
@@ -293,25 +293,25 @@ commit;
     {
       "name": "alloc.alloc.exchange_malloc",
       "file_index": 10,
-      "first_line": 318,
+      "first_line": 324,
       "local": false
     },
     {
       "name": "alloc.boxed.implement_alloc_boxed_Box_generic_par_T_generic_par_A.into_raw_with_allocator",
       "file_index": 6,
-      "first_line": 1106,
+      "first_line": 1107,
       "local": true
     },
     {
       "name": "alloc.boxed.implement_alloc_boxed_Box_generic_par_T_generic_par_A.leak",
       "file_index": 6,
-      "first_line": 1179,
+      "first_line": 1180,
       "local": true
     },
     {
       "name": "alloc.boxed.implement_alloc_boxed_Box_generic_par_T_generic_par_A.drop",
       "file_index": 6,
-      "first_line": 1231,
+      "first_line": 1232,
       "local": true
     },
     {
@@ -504,7 +504,7 @@ commit;
     ],
     [
       6,
-      1125,
+      1126,
       30,
       14,
       15
@@ -560,7 +560,7 @@ commit;
     ],
     [
       10,
-      172,
+      178,
       27,
       21,
       22
@@ -609,28 +609,28 @@ commit;
     ],
     [
       10,
-      172,
+      178,
       27,
       21,
       18
     ],
     [
       6,
-      1107,
+      1108,
       31,
       26,
       14
     ],
     [
       6,
-      1126,
+      1127,
       23,
       14,
       27
     ],
     [
       6,
-      1127,
+      1128,
       5,
       14,
       28
