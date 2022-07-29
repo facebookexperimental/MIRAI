@@ -125,19 +125,19 @@ commit;
 /* EXPECTED:CALL_SITES{
   "files": [
     "tests/call_graph/type_relations.rs",
-    "/rustc/f2d93935ffba3ab9d7ccb5300771a2d29b4c8bf3/library/core/src/fmt/mod.rs",
-    "/rustc/f2d93935ffba3ab9d7ccb5300771a2d29b4c8bf3/library/core/src/slice/mod.rs",
-    "/rustc/f2d93935ffba3ab9d7ccb5300771a2d29b4c8bf3/library/core/src/slice/iter/macros.rs",
-    "/rustc/f2d93935ffba3ab9d7ccb5300771a2d29b4c8bf3/library/alloc/src/vec/mod.rs",
-    "/rustc/f2d93935ffba3ab9d7ccb5300771a2d29b4c8bf3/library/std/src/io/stdio.rs",
-    "/rustc/f2d93935ffba3ab9d7ccb5300771a2d29b4c8bf3/library/alloc/src/boxed.rs",
-    "/rustc/f2d93935ffba3ab9d7ccb5300771a2d29b4c8bf3/library/core/src/intrinsics.rs",
-    "/rustc/f2d93935ffba3ab9d7ccb5300771a2d29b4c8bf3/library/core/src/slice/iter.rs",
-    "/rustc/f2d93935ffba3ab9d7ccb5300771a2d29b4c8bf3/library/core/src/ptr/non_null.rs",
-    "/rustc/f2d93935ffba3ab9d7ccb5300771a2d29b4c8bf3/library/alloc/src/alloc.rs",
-    "/rustc/f2d93935ffba3ab9d7ccb5300771a2d29b4c8bf3/library/core/src/convert/mod.rs",
-    "/rustc/f2d93935ffba3ab9d7ccb5300771a2d29b4c8bf3/library/alloc/src/slice.rs",
-    "/rustc/f2d93935ffba3ab9d7ccb5300771a2d29b4c8bf3/library/core/src/ptr/mod.rs"
+    "/rustc/7665c3543079ebc3710b676d0fd6951bedfd4b29/library/core/src/fmt/mod.rs",
+    "/rustc/7665c3543079ebc3710b676d0fd6951bedfd4b29/library/core/src/slice/mod.rs",
+    "/rustc/7665c3543079ebc3710b676d0fd6951bedfd4b29/library/core/src/slice/iter/macros.rs",
+    "/rustc/7665c3543079ebc3710b676d0fd6951bedfd4b29/library/alloc/src/vec/mod.rs",
+    "/rustc/7665c3543079ebc3710b676d0fd6951bedfd4b29/library/std/src/io/stdio.rs",
+    "/rustc/7665c3543079ebc3710b676d0fd6951bedfd4b29/library/alloc/src/boxed.rs",
+    "/rustc/7665c3543079ebc3710b676d0fd6951bedfd4b29/library/core/src/intrinsics.rs",
+    "/rustc/7665c3543079ebc3710b676d0fd6951bedfd4b29/library/core/src/slice/iter.rs",
+    "/rustc/7665c3543079ebc3710b676d0fd6951bedfd4b29/library/core/src/ptr/non_null.rs",
+    "/rustc/7665c3543079ebc3710b676d0fd6951bedfd4b29/library/alloc/src/alloc.rs",
+    "/rustc/7665c3543079ebc3710b676d0fd6951bedfd4b29/library/core/src/convert/mod.rs",
+    "/rustc/7665c3543079ebc3710b676d0fd6951bedfd4b29/library/alloc/src/slice.rs",
+    "/rustc/7665c3543079ebc3710b676d0fd6951bedfd4b29/library/core/src/ptr/mod.rs"
   ],
   "callables": [
     {
@@ -197,7 +197,7 @@ commit;
     {
       "name": "alloc.vec.implement_alloc_vec_Vec_generic_par_T_generic_par_A.drop",
       "file_index": 4,
-      "first_line": 2912,
+      "first_line": 2915,
       "local": true
     },
     {
@@ -209,7 +209,7 @@ commit;
     {
       "name": "alloc.vec.implement_alloc_vec_Vec_generic_par_T_generic_par_A.deref",
       "file_index": 4,
-      "first_line": 2528,
+      "first_line": 2531,
       "local": true
     },
     {
@@ -227,7 +227,7 @@ commit;
     {
       "name": "alloc.boxed.implement_alloc_boxed_Box_generic_par_T_generic_par_A.into_unique",
       "file_index": 6,
-      "first_line": 1136,
+      "first_line": 1119,
       "local": true
     },
     {
@@ -299,19 +299,19 @@ commit;
     {
       "name": "alloc.boxed.implement_alloc_boxed_Box_generic_par_T_generic_par_A.into_raw_with_allocator",
       "file_index": 6,
-      "first_line": 1123,
+      "first_line": 1106,
       "local": true
     },
     {
       "name": "alloc.boxed.implement_alloc_boxed_Box_generic_par_T_generic_par_A.leak",
       "file_index": 6,
-      "first_line": 1196,
+      "first_line": 1179,
       "local": true
     },
     {
       "name": "alloc.boxed.implement_alloc_boxed_Box_generic_par_T_generic_par_A.drop",
       "file_index": 6,
-      "first_line": 1248,
+      "first_line": 1231,
       "local": true
     },
     {
@@ -504,7 +504,7 @@ commit;
     ],
     [
       6,
-      1142,
+      1125,
       30,
       14,
       15
@@ -616,21 +616,21 @@ commit;
     ],
     [
       6,
-      1124,
+      1107,
       31,
       26,
       14
     ],
     [
       6,
-      1143,
+      1126,
       23,
       14,
       27
     ],
     [
       6,
-      1144,
+      1127,
       5,
       14,
       28
@@ -679,21 +679,21 @@ commit;
     ],
     [
       4,
-      2529,
+      2532,
       40,
       11,
       19
     ],
     [
       4,
-      2917,
+      2920,
       13,
       9,
       31
     ],
     [
       4,
-      2917,
+      2920,
       62,
       9,
       20
