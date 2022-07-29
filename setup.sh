@@ -7,17 +7,10 @@
 # Directory for this source file
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-TOOLCHAIN=$(cat "$DIR/rust-toolchain")
+TOOLCHAIN=$(cat "$DIR/rust-toolchain.toml")
 
-# install formatter
-rustup "+$TOOLCHAIN" component add rustfmt-preview
-# install linter
-rustup "+$TOOLCHAIN" component add clippy-preview
-# install rustc-dev
-rustup "+$TOOLCHAIN" component add rustc-dev
-# install llvm-tools
-rustup "+$TOOLCHAIN" component add llvm-tools-preview
-# install audit
-cargo "+$TOOLCHAIN" install cargo-audit
 # override tool chain
 rustup override set $TOOLCHAIN
+
+# install audit
+cargo install cargo-audit

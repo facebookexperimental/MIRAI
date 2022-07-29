@@ -47,7 +47,7 @@ sudo cp binaries/libz3.dylib.darwin /usr/local/lib/libz3.dylib
 sudo cp include/*.h /usr/local/include
 ```
 
-You may need to allow the file to opened using the
+You may need to allow the file to be opened using the
 Security and Privacy tab of the System Preferences application.
 
 Then build and install MIRAI into cargo:
