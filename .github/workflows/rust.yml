@@ -57,7 +57,7 @@ jobs:
         with:
           toolchain: nightly-2022-07-07
           profile: minimal
-          components: clippy, rustc-dev, llvm-tools-preview
+          components: rustc-dev, llvm-tools-preview
 
       - name: Install Z3
         run: |
@@ -85,7 +85,7 @@ jobs:
         with:
           toolchain: nightly-2022-07-07
           profile: minimal
-          components: clippy, rustc-dev, llvm-tools-preview
+          components: rustc-dev, llvm-tools-preview
 
       - name: Install Z3
         run: |
@@ -103,6 +103,8 @@ jobs:
 
   mirai_on_mirai_windows:
     runs-on: windows-latest
+    env:
+      Z3_SYS_Z3_HEADER: ${{ github.workspace }}\include\z3.h
 
     steps:
       - uses: actions/checkout@v2
@@ -112,11 +114,11 @@ jobs:
         with:
           toolchain: nightly-2022-07-07
           profile: minimal
-          components: clippy, rustc-dev, llvm-tools-preview
+          components: rustc-dev, llvm-tools-preview
 
-      - name: Use static linking
+      - name: Use customized toml
         run: |
-          cp checker/Cargo.windows.toml checker/Cargo.toml 
+          cp checker/Cargo.windows.toml checker/Cargo.toml
 
       - name: Install MIRAI
         uses: actions-rs/cargo@v1
@@ -126,5 +128,6 @@ jobs:
 
       - name: Run MIRAI on MIRAI
         run: |
+          cp binaries/libz3.dll ~/.cargo/bin
           cargo mirai
 
