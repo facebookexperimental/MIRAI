@@ -49,7 +49,7 @@ shellwords = "*"
 sled = "*"
 tar = "0.4.38"
 tempfile = "*"
-z3-sys = "*"
+z3-sys = "0.7.1"
 
 [dev-dependencies]
 walkdir = "*"
