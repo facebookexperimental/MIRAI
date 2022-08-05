@@ -49,7 +49,7 @@ shellwords = "*"
 sled = "*"
 tar = "0.4.38"
 tempfile = "*"
-z3-sys = { version = "*", features = ["static-link-z3"] }
+z3-sys = { version = "*", features = ["static-link-z3"], optional = true }
 
 [dev-dependencies]
 walkdir = "*"
@@ -62,3 +62,9 @@ walkdir = "*"
 # We set the dep to a specific revision so we don't get paths as above not longer working after update of the repo
 # and the Cargo.lock.
 contracts = { version = "0.6.0", features = ["mirai_assertions"] }
+
+[features]
+default = ["z3"]
+z3 = ["dep:z3-sys"]
+
+
