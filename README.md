@@ -20,8 +20,8 @@ become security problems (denial of service, undefined behavior).
 
 ## How to use MIRAI
 
-You'll need to install MIRAI as described here for [MacOS and Windows](https://github.com/facebookexperimental/MIRAI/blob/main/documentation/InstallationGuide.md)
-and here for [Linux](https://github.com/facebookexperimental/MIRAI/blob/main/documentation/Linux.md).
+You'll need to install MIRAI as described 
+[here](https://github.com/facebookexperimental/MIRAI/blob/main/documentation/InstallationGuide.md).
 
 Then use `cargo mirai` to run MIRAI over your current package. This works much like `cargo check` but uses MIRAI rather
 than rustc to analyze the targets of your current package.

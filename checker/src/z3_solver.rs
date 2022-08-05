@@ -605,6 +605,12 @@ impl Z3Solver {
     where
         F: FnOnce(&Expression) -> z3_sys::Z3_ast + Copy,
     {
+        trace!(
+            "general_switch(discriminator {:?}, cases: {:?}, default {:?})",
+            discriminator,
+            cases,
+            default
+        );
         if discriminator.expression.is_bit_vector() {
             return self.switch_with_bv_discriminator(
                 discriminator,
@@ -2102,6 +2108,12 @@ impl Z3Solver {
     where
         F: FnOnce(&Expression) -> z3_sys::Z3_ast + Copy,
     {
+        trace!(
+            "switch_with_bv_discriminator(discriminator {:?}, cases: {:?}, default {:?})",
+            discriminator,
+            cases,
+            default
+        );
         let ty = discriminator.expression.infer_type();
         let num_bits = u32::from(ty.bit_length());
         let discriminator_ast = self.get_as_bv_z3_ast(&discriminator.expression, num_bits);

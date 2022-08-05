@@ -16,10 +16,17 @@ jobs:
           profile: minimal
           components: clippy, rustc-dev, llvm-tools-preview
 
-      - name: Install Z3
-        run: |
-          cp binaries/libz3.dylib /usr/local/lib
-          cp include/*.h /usr/local/include
+      - name: Cache Cargo
+        if: steps.filter.outputs.rust == 'true'
+        uses: actions/cache@v3.0.5
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Run Clippy
         uses: actions-rs/clippy@master
@@ -59,10 +66,17 @@ jobs:
           profile: minimal
           components: clippy, rustc-dev, llvm-tools-preview
 
-      - name: Install Z3
-        run: |
-          cp binaries/libz3.dylib /usr/local/lib
-          cp include/*.h /usr/local/include
+      - name: Cache Cargo
+        if: steps.filter.outputs.rust == 'true'
+        uses: actions/cache@v3.0.5
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Install MIRAI
         uses: actions-rs/cargo@v1
@@ -87,9 +101,17 @@ jobs:
           profile: minimal
           components: clippy, rustc-dev, llvm-tools-preview
 
-      - name: Install Z3
-        run: |
-          sudo apt-get install libz3-dev
+      - name: Cache Cargo
+        if: steps.filter.outputs.rust == 'true'
+        uses: actions/cache@v3.0.5
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Install MIRAI
         uses: actions-rs/cargo@v1
@@ -114,9 +136,17 @@ jobs:
           profile: minimal
           components: clippy, rustc-dev, llvm-tools-preview
 
-      - name: Use static linking
-        run: |
-          cp checker/Cargo.windows.toml checker/Cargo.toml 
+      - name: Cache Cargo
+        if: steps.filter.outputs.rust == 'true'
+        uses: actions/cache@v3.0.5
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Install MIRAI
         uses: actions-rs/cargo@v1
