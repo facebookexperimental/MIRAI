@@ -3,6 +3,13 @@
 Install MIRAI following the instructions in the
 [installation guide](https://github.com/facebookexperimental/MIRAI/blob/main/documentation/InstallationGuide.md).
 
+Also make sure that the correct version of rustc is installed, along with some optional components
+
+```bash
+./setup.sh
+```
+
+
 ## Editing
 
 The best editing experience seems to be with [Clion](https://www.jetbrains.com/clion/).

@@ -3,3 +3,5 @@
 .idea/
 target/
 examples/
+checker/.z3-trace
+.z3-trace

@@ -1181,9 +1181,11 @@ impl Expression {
     #[logfn_inputs(TRACE)]
     pub fn is_bit_vector(&self) -> bool {
         match self {
-            Expression::BitAnd { .. } | Expression::BitOr { .. } | Expression::BitXor { .. } => {
-                true
-            }
+            Expression::BitAnd { .. }
+            | Expression::BitOr { .. }
+            | Expression::BitXor { .. }
+            | Expression::Shl { .. }
+            | Expression::Shr { .. } => true,
             Expression::ConditionalExpression {
                 consequent: left,
                 alternate: right,
