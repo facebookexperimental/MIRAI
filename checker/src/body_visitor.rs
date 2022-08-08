@@ -288,7 +288,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
             .swap_heap_counter(saved_heap_counter);
 
         // Compute dominance information for calls
-        let dominators = self.mir.dominators();
+        let dominators = self.mir.basic_blocks.dominators();
         for (location1, callee_defid1) in self.block_to_call.iter() {
             for (location2, callee_defid2) in self.block_to_call.iter() {
                 if location1 != location2 && location1.dominates(*location2, &dominators) {

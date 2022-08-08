@@ -9,7 +9,7 @@
 
 #![stable(feature = "dummy", since = "1.0.0")]
 #![feature(intrinsics, staged_api)]
-#![feature(const_mut_refs, const_intrinsic_copy)]
+#![feature(const_mut_refs)]
 
 use mirai_annotations::*;
 
