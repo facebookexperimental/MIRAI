@@ -124,7 +124,7 @@ jobs:
         with:
           toolchain: nightly-2022-08-08
           profile: minimal
-          components: clippy, rustc-dev, llvm-tools-preview
+          components: rustc-dev, llvm-tools-preview
 
       - name: Cache Cargo
         uses: actions/cache@v3.0.5
