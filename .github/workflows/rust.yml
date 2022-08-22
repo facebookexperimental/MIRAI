@@ -3,9 +3,8 @@ on: pull_request
 name: Continuous Integration
 
 jobs:
-  grcov:
-    runs-on: macos-latest
-
+  clippy:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
 
@@ -17,7 +16,6 @@ jobs:
           components: clippy, rustc-dev, llvm-tools-preview
 
       - name: Cache Cargo
-        if: steps.filter.outputs.rust == 'true'
         uses: actions/cache@v3.0.5
         with:
           path: |
@@ -26,12 +24,36 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-clippy-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Run Clippy
         uses: actions-rs/clippy@master
         with:
           args: --all-features --all-targets -- -D warnings
+
+  tests:
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Install toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly-2022-08-08
+          profile: minimal
+          components: rustc-dev, llvm-tools-preview
+
+      - name: Cache Cargo
+        uses: actions/cache@v3.0.5
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-tests-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Execute tests
         uses: actions-rs/cargo@v1
@@ -64,10 +86,9 @@ jobs:
         with:
           toolchain: nightly-2022-08-08
           profile: minimal
-          components: clippy, rustc-dev, llvm-tools-preview
+          components: rustc-dev, llvm-tools-preview
 
       - name: Cache Cargo
-        if: steps.filter.outputs.rust == 'true'
         uses: actions/cache@v3.0.5
         with:
           path: |
@@ -76,13 +97,13 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-mirai-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Install MIRAI
         uses: actions-rs/cargo@v1
         with:
           command: install
-          args: --path ./checker
+          args: --force --path ./checker
 
       - name: Run MIRAI on MIRAI
         run: |
@@ -102,7 +123,6 @@ jobs:
           components: clippy, rustc-dev, llvm-tools-preview
 
       - name: Cache Cargo
-        if: steps.filter.outputs.rust == 'true'
         uses: actions/cache@v3.0.5
         with:
           path: |
@@ -111,13 +131,13 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-mirai-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Install MIRAI
         uses: actions-rs/cargo@v1
         with:
           command: install
-          args: --path ./checker --no-default-features
+          args: --force --path ./checker --no-default-features
 
       - name: Run MIRAI on MIRAI
         run: |
@@ -134,10 +154,9 @@ jobs:
         with:
           toolchain: nightly-2022-08-08
           profile: minimal
-          components: clippy, rustc-dev, llvm-tools-preview
+          components: rustc-dev, llvm-tools-preview
 
       - name: Cache Cargo
-        if: steps.filter.outputs.rust == 'true'
         uses: actions/cache@v3.0.5
         with:
           path: |
@@ -146,13 +165,13 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-mirai-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Install MIRAI
         uses: actions-rs/cargo@v1
         with:
           command: install
-          args: --path ./checker --no-default-features
+          args: --force --path ./checker --no-default-features
 
       - name: Run MIRAI on MIRAI
         run: |
