@@ -345,7 +345,12 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                 !tcx.is_mir_available(callee_defid)
                     || (!callee_defid.is_local()
                         && (self.callee_generic_arguments.is_none()
-                            || self.callee_generic_arguments.unwrap().is_empty())
+                            || self
+                                .callee_generic_arguments
+                                .unwrap()
+                                .types()
+                                .next()
+                                .is_none())
                         && func_args.is_none()),
             );
             let initial_type_cache = self.initial_type_cache.clone();

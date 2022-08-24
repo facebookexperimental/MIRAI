@@ -102,7 +102,7 @@ commit;
       "name": "core.fmt.implement_core_fmt_Arguments.new_v1",
       "file_index": 2,
       "first_line": 390,
-      "local": true
+      "local": false
     }
   ],
   "calls": [
@@ -139,13 +139,6 @@ commit;
       17,
       5,
       2,
-      5
-    ],
-    [
-      2,
-      392,
-      13,
-      5,
       5
     ]
   ]
