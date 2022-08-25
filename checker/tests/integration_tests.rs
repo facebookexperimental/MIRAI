@@ -412,8 +412,8 @@ fn check_call_graph_output(
             println!("Actual:\n{}", actual);
             1
             // let c = expected_regex.captures(&test_case_data).unwrap();
-            // let updated = expected_regex
-            //     .replace(&test_case_data, format!("{}\n{}\n{}", &c[1], actual, &c[3]));
+            // let updated =
+            //     expected_regex.replace(&test_case_data, format!("{}{}{}", &c[1], actual, &c[3]));
             // fs::write(Path::new(&file_name), updated.to_string()).unwrap();
             // 0
         }
