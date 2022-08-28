@@ -125,19 +125,19 @@ commit;
 /* EXPECTED:CALL_SITES{
   "files": [
     "tests/call_graph/type_relations.rs",
-    "/rustc/d394408fb38c4de61f765a3ed5189d2731a1da91/library/core/src/fmt/mod.rs",
-    "/rustc/d394408fb38c4de61f765a3ed5189d2731a1da91/library/core/src/slice/mod.rs",
-    "/rustc/d394408fb38c4de61f765a3ed5189d2731a1da91/library/core/src/slice/iter/macros.rs",
-    "/rustc/d394408fb38c4de61f765a3ed5189d2731a1da91/library/alloc/src/vec/mod.rs",
-    "/rustc/d394408fb38c4de61f765a3ed5189d2731a1da91/library/std/src/io/stdio.rs",
-    "/rustc/d394408fb38c4de61f765a3ed5189d2731a1da91/library/alloc/src/boxed.rs",
-    "/rustc/d394408fb38c4de61f765a3ed5189d2731a1da91/library/core/src/intrinsics.rs",
-    "/rustc/d394408fb38c4de61f765a3ed5189d2731a1da91/library/core/src/slice/iter.rs",
-    "/rustc/d394408fb38c4de61f765a3ed5189d2731a1da91/library/core/src/ptr/non_null.rs",
-    "/rustc/d394408fb38c4de61f765a3ed5189d2731a1da91/library/alloc/src/alloc.rs",
-    "/rustc/d394408fb38c4de61f765a3ed5189d2731a1da91/library/core/src/convert/mod.rs",
-    "/rustc/d394408fb38c4de61f765a3ed5189d2731a1da91/library/alloc/src/slice.rs",
-    "/rustc/d394408fb38c4de61f765a3ed5189d2731a1da91/library/core/src/ptr/mod.rs"
+    "/rustc/addacb5878b9970ebc1665768a05cb601e7aea15/library/core/src/fmt/mod.rs",
+    "/rustc/addacb5878b9970ebc1665768a05cb601e7aea15/library/core/src/slice/mod.rs",
+    "/rustc/addacb5878b9970ebc1665768a05cb601e7aea15/library/core/src/slice/iter/macros.rs",
+    "/rustc/addacb5878b9970ebc1665768a05cb601e7aea15/library/alloc/src/vec/mod.rs",
+    "/rustc/addacb5878b9970ebc1665768a05cb601e7aea15/library/std/src/io/stdio.rs",
+    "/rustc/addacb5878b9970ebc1665768a05cb601e7aea15/library/alloc/src/alloc.rs",
+    "/rustc/addacb5878b9970ebc1665768a05cb601e7aea15/library/core/src/convert/mod.rs",
+    "/rustc/addacb5878b9970ebc1665768a05cb601e7aea15/library/alloc/src/boxed.rs",
+    "/rustc/addacb5878b9970ebc1665768a05cb601e7aea15/library/core/src/intrinsics.rs",
+    "/rustc/addacb5878b9970ebc1665768a05cb601e7aea15/library/core/src/ptr/mod.rs",
+    "/rustc/addacb5878b9970ebc1665768a05cb601e7aea15/library/alloc/src/slice.rs",
+    "/rustc/addacb5878b9970ebc1665768a05cb601e7aea15/library/core/src/ptr/non_null.rs",
+    "/rustc/addacb5878b9970ebc1665768a05cb601e7aea15/library/core/src/slice/iter.rs"
   ],
   "callables": [
     {
@@ -149,7 +149,7 @@ commit;
     {
       "name": "core.fmt.implement_core_fmt_Formatter.debug_struct_field1_finish",
       "file_index": 1,
-      "first_line": 1972,
+      "first_line": 1976,
       "local": false
     },
     {
@@ -161,7 +161,7 @@ commit;
     {
       "name": "core.fmt.implement_core_fmt_ArgumentV1.new_display",
       "file_index": 1,
-      "first_line": 318,
+      "first_line": 322,
       "local": true
     },
     {
@@ -179,7 +179,7 @@ commit;
     {
       "name": "core.slice.implement.iter",
       "file_index": 2,
-      "first_line": 734,
+      "first_line": 737,
       "local": true
     },
     {
@@ -197,7 +197,7 @@ commit;
     {
       "name": "alloc.vec.implement_alloc_vec_Vec_generic_par_T_generic_par_A.drop",
       "file_index": 4,
-      "first_line": 2915,
+      "first_line": 2916,
       "local": true
     },
     {
@@ -209,7 +209,7 @@ commit;
     {
       "name": "alloc.vec.implement_alloc_vec_Vec_generic_par_T_generic_par_A.deref",
       "file_index": 4,
-      "first_line": 2531,
+      "first_line": 2532,
       "local": true
     },
     {
@@ -221,103 +221,97 @@ commit;
     {
       "name": "core.fmt.implement_core_fmt_Arguments.new_v1",
       "file_index": 1,
-      "first_line": 390,
+      "first_line": 394,
       "local": false
-    },
-    {
-      "name": "alloc.boxed.implement_alloc_boxed_Box_generic_par_T_generic_par_A.into_unique",
-      "file_index": 6,
-      "first_line": 1120,
-      "local": true
-    },
-    {
-      "name": "core.intrinsics.foreign_1.assert_inhabited",
-      "file_index": 7,
-      "first_line": 1169,
-      "local": false
-    },
-    {
-      "name": "core.slice.iter.implement_core_slice_iter_Iter_generic_par_T.new",
-      "file_index": 8,
-      "first_line": 88,
-      "local": true
-    },
-    {
-      "name": "core.intrinsics.foreign_1.ptr_guaranteed_eq",
-      "file_index": 7,
-      "first_line": 2240,
-      "local": false
-    },
-    {
-      "name": "core.ptr.non_null.implement_core_ptr_non_null_NonNull_generic_par_T.new",
-      "file_index": 9,
-      "first_line": 218,
-      "local": true
-    },
-    {
-      "name": "alloc.vec.implement_alloc_vec_Vec_generic_par_T_generic_par_A.as_ptr",
-      "file_index": 4,
-      "first_line": 1167,
-      "local": true
-    },
-    {
-      "name": "alloc.vec.implement_alloc_vec_Vec_generic_par_T_generic_par_A.as_mut_ptr",
-      "file_index": 4,
-      "first_line": 1204,
-      "local": true
     },
     {
       "name": "alloc.alloc.implement.alloc_impl",
-      "file_index": 10,
+      "file_index": 6,
       "first_line": 172,
       "local": true
     },
     {
       "name": "core.convert.implement_generic_par_T.from",
-      "file_index": 11,
-      "first_line": 559,
-      "local": true
-    },
-    {
-      "name": "core.intrinsics.foreign_1.assume",
       "file_index": 7,
-      "first_line": 1063,
-      "local": false
-    },
-    {
-      "name": "alloc.slice.implement.into_vec",
-      "file_index": 12,
-      "first_line": 528,
+      "first_line": 561,
       "local": true
-    },
-    {
-      "name": "alloc.alloc.exchange_malloc",
-      "file_index": 10,
-      "first_line": 324,
-      "local": false
     },
     {
       "name": "alloc.boxed.implement_alloc_boxed_Box_generic_par_T_generic_par_A.into_raw_with_allocator",
-      "file_index": 6,
-      "first_line": 1107,
+      "file_index": 8,
+      "first_line": 1112,
+      "local": true
+    },
+    {
+      "name": "alloc.boxed.implement_alloc_boxed_Box_generic_par_T_generic_par_A.into_unique",
+      "file_index": 8,
+      "first_line": 1125,
       "local": true
     },
     {
       "name": "alloc.boxed.implement_alloc_boxed_Box_generic_par_T_generic_par_A.leak",
-      "file_index": 6,
-      "first_line": 1180,
+      "file_index": 8,
+      "first_line": 1185,
       "local": true
     },
     {
       "name": "alloc.boxed.implement_alloc_boxed_Box_generic_par_T_generic_par_A.drop",
+      "file_index": 8,
+      "first_line": 1237,
+      "local": true
+    },
+    {
+      "name": "alloc.vec.implement_alloc_vec_Vec_generic_par_T_generic_par_A.as_ptr",
+      "file_index": 4,
+      "first_line": 1168,
+      "local": true
+    },
+    {
+      "name": "core.intrinsics.foreign_1.assume",
+      "file_index": 9,
+      "first_line": 853,
+      "local": false
+    },
+    {
+      "name": "alloc.vec.implement_alloc_vec_Vec_generic_par_T_generic_par_A.as_mut_ptr",
+      "file_index": 4,
+      "first_line": 1205,
+      "local": true
+    },
+    {
+      "name": "core.ptr.drop_in_place",
+      "file_index": 10,
+      "first_line": 487,
+      "local": true
+    },
+    {
+      "name": "alloc.slice.implement.into_vec",
+      "file_index": 11,
+      "first_line": 458,
+      "local": true
+    },
+    {
+      "name": "alloc.alloc.exchange_malloc",
       "file_index": 6,
-      "first_line": 1232,
+      "first_line": 324,
+      "local": false
+    },
+    {
+      "name": "core.ptr.non_null.implement_core_ptr_non_null_NonNull_generic_par_T.new",
+      "file_index": 12,
+      "first_line": 218,
+      "local": true
+    },
+    {
+      "name": "core.slice.iter.implement_core_slice_iter_Iter_generic_par_T.new",
+      "file_index": 13,
+      "first_line": 88,
       "local": true
     },
     {
       "name": "alloc.slice.hack.into_vec",
-      "file_index": 12,
-      "first_line": 167,
+      "file_index": 11,
+      "first_line": 97,
       "local": true
     },
     {
@@ -327,10 +321,16 @@ commit;
       "local": true
     },
     {
-      "name": "core.ptr.drop_in_place",
-      "file_index": 13,
-      "first_line": 487,
-      "local": true
+      "name": "core.intrinsics.foreign_1.ptr_guaranteed_eq",
+      "file_index": 9,
+      "first_line": 2030,
+      "local": false
+    },
+    {
+      "name": "core.intrinsics.foreign_1.assert_inhabited",
+      "file_index": 9,
+      "first_line": 959,
+      "local": false
     }
   ],
   "calls": [
@@ -504,87 +504,66 @@ commit;
     ],
     [
       6,
-      1126,
-      30,
+      178,
+      27,
       14,
       15
     ],
     [
       8,
-      92,
-      21,
+      1113,
+      31,
       16,
       17
     ],
     [
       8,
-      135,
-      1,
-      7,
-      17
-    ],
-    [
-      9,
-      219,
-      13,
-      18,
-      17
-    ],
-    [
-      4,
-      1172,
-      21,
-      19,
-      17
+      1132,
+      23,
+      17,
+      18
     ],
     [
       8,
-      135,
-      1,
-      7,
-      17
+      1133,
+      5,
+      17,
+      19
     ],
     [
       4,
-      1209,
-      21,
+      1173,
+      13,
       20,
-      17
+      21
     ],
     [
-      10,
-      178,
-      27,
-      21,
-      22
-    ],
-    [
-      2,
-      735,
-      9,
-      6,
-      16
-    ],
-    [
-      8,
-      92,
+      4,
+      1210,
       13,
-      16,
+      22,
+      21
+    ],
+    [
+      4,
+      2533,
+      40,
+      11,
+      20
+    ],
+    [
+      4,
+      2921,
+      13,
+      9,
       23
     ],
     [
-      8,
-      135,
-      1,
-      7,
-      23
-    ],
-    [
-      8,
-      135,
-      1,
-      7,
-      23
+      4,
+      2921,
+      62,
+      9,
+      22
     ],
     [
       0,
@@ -601,95 +580,116 @@ commit;
       25
     ],
     [
-      10,
+      6,
       178,
       27,
-      21,
-      18
-    ],
-    [
-      6,
-      1108,
-      31,
-      26,
-      14
-    ],
-    [
-      6,
-      1127,
-      23,
       14,
-      27
-    ],
-    [
-      6,
-      1128,
-      5,
-      14,
-      28
-    ],
-    [
-      12,
-      170,
-      30,
-      29,
       26
     ],
     [
-      12,
-      171,
-      13,
-      29,
-      30
+      2,
+      738,
+      9,
+      6,
+      27
     ],
     [
-      12,
-      173,
+      13,
+      92,
+      13,
+      27,
+      21
+    ],
+    [
+      13,
+      135,
+      1,
+      7,
+      21
+    ],
+    [
+      13,
+      135,
+      1,
+      7,
+      21
+    ],
+    [
+      11,
+      100,
+      30,
+      28,
+      16
+    ],
+    [
+      11,
+      101,
+      13,
+      28,
+      29
+    ],
+    [
+      11,
+      103,
       5,
-      29,
+      28,
+      19
+    ],
+    [
+      11,
+      460,
+      9,
+      24,
       28
     ],
     [
       12,
-      530,
-      9,
-      24,
-      29
+      219,
+      13,
+      26,
+      30
     ],
     [
       4,
-      1172,
-      13,
-      19,
-      23
-    ],
-    [
-      4,
-      1209,
-      13,
+      1173,
+      21,
       20,
-      23
+      30
     ],
     [
-      4,
-      2532,
-      40,
-      11,
-      19
-    ],
-    [
-      4,
-      2920,
       13,
-      9,
+      135,
+      1,
+      7,
+      30
+    ],
+    [
+      4,
+      1210,
+      21,
+      22,
+      30
+    ],
+    [
+      8,
+      1131,
+      30,
+      17,
       31
     ],
     [
-      4,
-      2920,
-      62,
-      9,
-      20
+      13,
+      92,
+      21,
+      27,
+      30
+    ],
+    [
+      13,
+      135,
+      1,
+      7,
+      30
     ]
   ]
 }*/

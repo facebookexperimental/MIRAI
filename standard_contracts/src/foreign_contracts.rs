@@ -4606,9 +4606,7 @@ pub mod stacker {
 pub mod std {
     pub mod backtrace {
         pub mod implement_std_backtrace_Backtrace {
-            pub fn capture() -> (std::backtrace::BacktraceStatus) {
-                (std::backtrace::BacktraceStatus::Unsupported)
-            }
+            default_contract!(capture);
         }
     }
 
