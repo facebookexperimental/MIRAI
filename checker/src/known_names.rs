@@ -217,18 +217,9 @@ impl KnownNamesCache {
                 .unwrap_or(KnownNames::None)
         };
 
-        let get_known_name_for_intrinsics_namespace = |mut def_path_data_iter: Iter<'_>| {
-            let current_elem = def_path_data_iter.next();
-            match path_data_elem_as_disambiguator(current_elem) {
-                Some(0) => get_path_data_elem_name(current_elem)
-                    .map(|n| match n.as_str().deref() {
-                        "copy" => KnownNames::StdIntrinsicsCopy,
-                        "copy_nonoverlapping" => KnownNames::StdIntrinsicsCopyNonOverlapping,
-                        "write_bytes" => KnownNames::StdIntrinsicsWriteBytes,
-                        _ => KnownNames::None,
-                    })
-                    .unwrap_or(KnownNames::None),
-                Some(1) => get_path_data_elem_name(def_path_data_iter.next())
+        let get_known_name_for_instrinsics_foreign_namespace =
+            |mut def_path_data_iter: Iter<'_>| {
+                get_path_data_elem_name(def_path_data_iter.next())
                     .map(|n| match n.as_str().deref() {
                         "arith_offset" => KnownNames::StdIntrinsicsArithOffset,
                         "bitreverse" => KnownNames::StdIntrinsicsBitreverse,
@@ -294,7 +285,28 @@ impl KnownNamesCache {
                         "truncf64" => KnownNames::StdIntrinsicsTruncf64,
                         _ => KnownNames::None,
                     })
-                    .unwrap_or(KnownNames::None),
+                    .unwrap_or(KnownNames::None)
+            };
+
+        let get_known_name_for_intrinsics_namespace = |mut def_path_data_iter: Iter<'_>| {
+            let current_elem = def_path_data_iter.next();
+            match path_data_elem_as_disambiguator(current_elem) {
+                Some(0) => {
+                    if is_foreign_module(current_elem) {
+                        get_known_name_for_instrinsics_foreign_namespace(def_path_data_iter)
+                    } else {
+                        get_path_data_elem_name(current_elem)
+                            .map(|n| match n.as_str().deref() {
+                                "copy" => KnownNames::StdIntrinsicsCopy,
+                                "copy_nonoverlapping" => {
+                                    KnownNames::StdIntrinsicsCopyNonOverlapping
+                                }
+                                "write_bytes" => KnownNames::StdIntrinsicsWriteBytes,
+                                _ => KnownNames::None,
+                            })
+                            .unwrap_or(KnownNames::None)
+                    }
+                }
                 _ => KnownNames::None,
             }
         };

@@ -2580,9 +2580,7 @@ pub mod core {
             default_contract!(prefetch_write_instruction);
             default_contract!(is_aligned_and_not_null);
             default_contract!(is_nonoverlapping);
-        }
 
-        pub mod foreign_1 {
             default_contract!(assert_inhabited);
             default_contract!(assert_zero_valid);
             default_contract!(assert_uninit_valid);

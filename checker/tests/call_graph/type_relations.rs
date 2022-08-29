@@ -125,19 +125,19 @@ commit;
 /* EXPECTED:CALL_SITES{
   "files": [
     "tests/call_graph/type_relations.rs",
-    "/rustc/addacb5878b9970ebc1665768a05cb601e7aea15/library/core/src/fmt/mod.rs",
-    "/rustc/addacb5878b9970ebc1665768a05cb601e7aea15/library/core/src/slice/mod.rs",
-    "/rustc/addacb5878b9970ebc1665768a05cb601e7aea15/library/core/src/slice/iter/macros.rs",
-    "/rustc/addacb5878b9970ebc1665768a05cb601e7aea15/library/alloc/src/vec/mod.rs",
-    "/rustc/addacb5878b9970ebc1665768a05cb601e7aea15/library/std/src/io/stdio.rs",
-    "/rustc/addacb5878b9970ebc1665768a05cb601e7aea15/library/alloc/src/alloc.rs",
-    "/rustc/addacb5878b9970ebc1665768a05cb601e7aea15/library/core/src/convert/mod.rs",
-    "/rustc/addacb5878b9970ebc1665768a05cb601e7aea15/library/alloc/src/boxed.rs",
-    "/rustc/addacb5878b9970ebc1665768a05cb601e7aea15/library/core/src/intrinsics.rs",
-    "/rustc/addacb5878b9970ebc1665768a05cb601e7aea15/library/core/src/ptr/mod.rs",
-    "/rustc/addacb5878b9970ebc1665768a05cb601e7aea15/library/alloc/src/slice.rs",
-    "/rustc/addacb5878b9970ebc1665768a05cb601e7aea15/library/core/src/ptr/non_null.rs",
-    "/rustc/addacb5878b9970ebc1665768a05cb601e7aea15/library/core/src/slice/iter.rs"
+    "/rustc/eaadb8947b850a025404082f6297766c4680a42a/library/core/src/fmt/mod.rs",
+    "/rustc/eaadb8947b850a025404082f6297766c4680a42a/library/core/src/slice/mod.rs",
+    "/rustc/eaadb8947b850a025404082f6297766c4680a42a/library/core/src/slice/iter/macros.rs",
+    "/rustc/eaadb8947b850a025404082f6297766c4680a42a/library/alloc/src/vec/mod.rs",
+    "/rustc/eaadb8947b850a025404082f6297766c4680a42a/library/std/src/io/stdio.rs",
+    "/rustc/eaadb8947b850a025404082f6297766c4680a42a/library/alloc/src/alloc.rs",
+    "/rustc/eaadb8947b850a025404082f6297766c4680a42a/library/core/src/convert/mod.rs",
+    "/rustc/eaadb8947b850a025404082f6297766c4680a42a/library/alloc/src/boxed.rs",
+    "/rustc/eaadb8947b850a025404082f6297766c4680a42a/library/core/src/intrinsics.rs",
+    "/rustc/eaadb8947b850a025404082f6297766c4680a42a/library/core/src/ptr/mod.rs",
+    "/rustc/eaadb8947b850a025404082f6297766c4680a42a/library/alloc/src/slice.rs",
+    "/rustc/eaadb8947b850a025404082f6297766c4680a42a/library/core/src/ptr/non_null.rs",
+    "/rustc/eaadb8947b850a025404082f6297766c4680a42a/library/core/src/slice/iter.rs"
   ],
   "callables": [
     {
@@ -267,9 +267,9 @@ commit;
       "local": true
     },
     {
-      "name": "core.intrinsics.foreign_1.assume",
+      "name": "core.intrinsics.foreign.assume",
       "file_index": 9,
-      "first_line": 853,
+      "first_line": 832,
       "local": false
     },
     {
@@ -321,15 +321,15 @@ commit;
       "local": true
     },
     {
-      "name": "core.intrinsics.foreign_1.ptr_guaranteed_eq",
+      "name": "core.intrinsics.foreign.ptr_guaranteed_eq",
       "file_index": 9,
-      "first_line": 2030,
+      "first_line": 2009,
       "local": false
     },
     {
-      "name": "core.intrinsics.foreign_1.assert_inhabited",
+      "name": "core.intrinsics.foreign.assert_inhabited",
       "file_index": 9,
-      "first_line": 959,
+      "first_line": 938,
       "local": false
     }
   ],
