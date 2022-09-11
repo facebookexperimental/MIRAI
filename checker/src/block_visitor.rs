@@ -2765,7 +2765,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         let size = alloc_len - offset_bytes;
                         let bytes = alloc
                             .inner()
-                            .get_bytes(
+                            .get_bytes_strip_provenance(
                                 &self.bv.tcx,
                                 alloc_range(
                                     ptr.into_parts().1,
@@ -2865,7 +2865,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 let size = end - start;
                 let bytes = data
                     .inner()
-                    .get_bytes(
+                    .get_bytes_strip_provenance(
                         &self.bv.tcx,
                         alloc_range(
                             rustc_target::abi::Size::from_bytes(start as u64),

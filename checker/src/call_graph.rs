@@ -763,7 +763,7 @@ impl<'tcx> CallGraph<'tcx> {
         base_type = base_type.replace("mut ", "");
         base_type = base_type.replace('&', "");
         if base_type.contains('[') && base_type.contains(']') {
-            base_type = base_type.replace('[', "").replace(']', "");
+            base_type = base_type.replace(['[', ']'], "");
             SimpleType::Collection(base_type.into_boxed_str())
         } else {
             SimpleType::Base(base_type.into_boxed_str())

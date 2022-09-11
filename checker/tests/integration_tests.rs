@@ -263,7 +263,7 @@ fn invoke_driver(
 ) -> usize {
     let mut rustc_args = vec![]; // any arguments after `--` for rustc
     {
-        let file_content = read_to_string(&Path::new(&file_name)).unwrap();
+        let file_content = read_to_string(Path::new(&file_name)).unwrap();
         let options_re = Regex::new(r"(?m)^\s*//\s*MIRAI_FLAGS\s(?P<flags>.*)$").unwrap();
         if let Some(captures) = options_re.captures(&file_content) {
             rustc_args = options.parse_from_str(&captures["flags"], true); // override based on test source

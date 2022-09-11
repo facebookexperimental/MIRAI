@@ -222,7 +222,7 @@ impl<'compilation, 'tcx> CrateVisitor<'compilation, 'tcx> {
     fn extract_test_fns(&self, def_id: DefId) -> Vec<String> {
         let mut result = vec![];
         for body in self.tcx.promoted_mir(def_id).iter() {
-            for b in body.basic_blocks().iter() {
+            for b in body.basic_blocks.iter() {
                 for s in &b.statements {
                     // The statement we are looking for has the form
                     // `Assign(_, Rvalue(Constant(Unevaluated(def_id)))))`
