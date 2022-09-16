@@ -384,7 +384,7 @@ fn get_sorted_block_indices<'tcx>(
     let mut block_indices = Vec::new();
     let mut already_added = HashSet::new();
     let mut loop_anchors = HashSet::new();
-    for bb in mir.basic_blocks().indices() {
+    for bb in mir.basic_blocks.indices() {
         add_predecessors_then_root_block(
             mir,
             bb,

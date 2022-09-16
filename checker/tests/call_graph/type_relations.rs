@@ -125,19 +125,19 @@ commit;
 /* EXPECTED:CALL_SITES{
   "files": [
     "tests/call_graph/type_relations.rs",
-    "/rustc/eaadb8947b850a025404082f6297766c4680a42a/library/core/src/fmt/mod.rs",
-    "/rustc/eaadb8947b850a025404082f6297766c4680a42a/library/core/src/slice/mod.rs",
-    "/rustc/eaadb8947b850a025404082f6297766c4680a42a/library/core/src/slice/iter/macros.rs",
-    "/rustc/eaadb8947b850a025404082f6297766c4680a42a/library/alloc/src/vec/mod.rs",
-    "/rustc/eaadb8947b850a025404082f6297766c4680a42a/library/std/src/io/stdio.rs",
-    "/rustc/eaadb8947b850a025404082f6297766c4680a42a/library/alloc/src/alloc.rs",
-    "/rustc/eaadb8947b850a025404082f6297766c4680a42a/library/core/src/convert/mod.rs",
-    "/rustc/eaadb8947b850a025404082f6297766c4680a42a/library/alloc/src/boxed.rs",
-    "/rustc/eaadb8947b850a025404082f6297766c4680a42a/library/core/src/intrinsics.rs",
-    "/rustc/eaadb8947b850a025404082f6297766c4680a42a/library/core/src/ptr/mod.rs",
-    "/rustc/eaadb8947b850a025404082f6297766c4680a42a/library/alloc/src/slice.rs",
-    "/rustc/eaadb8947b850a025404082f6297766c4680a42a/library/core/src/ptr/non_null.rs",
-    "/rustc/eaadb8947b850a025404082f6297766c4680a42a/library/core/src/slice/iter.rs"
+    "/rustc/b44197abb0b3ffe4908892e1e08ab1cd721ff3b9/library/core/src/fmt/mod.rs",
+    "/rustc/b44197abb0b3ffe4908892e1e08ab1cd721ff3b9/library/core/src/slice/mod.rs",
+    "/rustc/b44197abb0b3ffe4908892e1e08ab1cd721ff3b9/library/core/src/slice/iter/macros.rs",
+    "/rustc/b44197abb0b3ffe4908892e1e08ab1cd721ff3b9/library/alloc/src/vec/mod.rs",
+    "/rustc/b44197abb0b3ffe4908892e1e08ab1cd721ff3b9/library/std/src/io/stdio.rs",
+    "/rustc/b44197abb0b3ffe4908892e1e08ab1cd721ff3b9/library/alloc/src/alloc.rs",
+    "/rustc/b44197abb0b3ffe4908892e1e08ab1cd721ff3b9/library/core/src/convert/mod.rs",
+    "/rustc/b44197abb0b3ffe4908892e1e08ab1cd721ff3b9/library/alloc/src/boxed.rs",
+    "/rustc/b44197abb0b3ffe4908892e1e08ab1cd721ff3b9/library/core/src/intrinsics.rs",
+    "/rustc/b44197abb0b3ffe4908892e1e08ab1cd721ff3b9/library/core/src/ptr/mod.rs",
+    "/rustc/b44197abb0b3ffe4908892e1e08ab1cd721ff3b9/library/alloc/src/slice.rs",
+    "/rustc/b44197abb0b3ffe4908892e1e08ab1cd721ff3b9/library/core/src/ptr/non_null.rs",
+    "/rustc/b44197abb0b3ffe4908892e1e08ab1cd721ff3b9/library/core/src/slice/iter.rs"
   ],
   "callables": [
     {
@@ -179,7 +179,7 @@ commit;
     {
       "name": "core.slice.implement.iter",
       "file_index": 2,
-      "first_line": 737,
+      "first_line": 738,
       "local": true
     },
     {
@@ -215,7 +215,7 @@ commit;
     {
       "name": "std.io.stdio._print",
       "file_index": 5,
-      "first_line": 1026,
+      "first_line": 1017,
       "local": false
     },
     {
@@ -269,7 +269,7 @@ commit;
     {
       "name": "core.intrinsics.foreign.assume",
       "file_index": 9,
-      "first_line": 832,
+      "first_line": 834,
       "local": false
     },
     {
@@ -323,13 +323,13 @@ commit;
     {
       "name": "core.intrinsics.foreign.ptr_guaranteed_eq",
       "file_index": 9,
-      "first_line": 2009,
+      "first_line": 2022,
       "local": false
     },
     {
       "name": "core.intrinsics.foreign.assert_inhabited",
       "file_index": 9,
-      "first_line": 938,
+      "first_line": 940,
       "local": false
     }
   ],
@@ -588,31 +588,10 @@ commit;
     ],
     [
       2,
-      738,
+      739,
       9,
       6,
       27
-    ],
-    [
-      13,
-      92,
-      13,
-      27,
-      21
-    ],
-    [
-      13,
-      135,
-      1,
-      7,
-      21
-    ],
-    [
-      13,
-      135,
-      1,
-      7,
-      21
     ],
     [
       11,
@@ -641,6 +620,27 @@ commit;
       9,
       24,
       28
+    ],
+    [
+      13,
+      92,
+      13,
+      27,
+      21
+    ],
+    [
+      13,
+      135,
+      1,
+      7,
+      21
+    ],
+    [
+      13,
+      135,
+      1,
+      7,
+      21
     ],
     [
       12,

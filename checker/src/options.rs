@@ -24,7 +24,7 @@ fn make_options_parser<'help>(running_test_harness: bool) -> Command<'help> {
             .long_help("Name is the simple name of a top-level crate function or a MIRAI summary key."))
         .arg(Arg::new("diag")
             .long("diag")
-            .possible_values(&["default", "verify", "library", "paranoid"])
+            .possible_values(["default", "verify", "library", "paranoid"])
             .default_value("default")
             .help("Level of diagnostics.\n")
             .long_help("With `default`, false positives will be avoided where possible.\nWith 'verify' errors are reported for incompletely analyzed functions.\nWith `paranoid`, all possible errors will be reported.\n"))
