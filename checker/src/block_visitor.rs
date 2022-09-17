@@ -2964,20 +2964,31 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         match ty.kind() {
             TyKind::Adt(def, substs) if def.is_enum() => {
                 trace!("deserializing {:?} {:?}", def, substs);
-                let discr_val_path = Path::new_discriminant(target_path.clone());
-                // Assume (probably incorrectly) that the discriminant is encoded into a single byte
-                // todo: somehow figure out what the Rust compiler is actually doing here. (Not easy.)
-                self.bv
-                    .update_value_at(discr_val_path, Rc::new((bytes[0] as u128).into()));
+                trace!("def.repr() {:?}", def.repr());
                 let mut bytes_left_to_deserialize = bytes;
                 if let Ok(enum_ty_layout) = self.type_visitor().layout_of(ty) {
-                    let (_, _, discr_index, discr_has_data) =
-                        self.get_discriminator_info(bytes[0] as u128, &enum_ty_layout);
-                    trace!("discr_index {:?}", discr_index);
-                    trace!("discr_has_data {:?}", discr_has_data);
-                    if !discr_has_data {
-                        bytes_left_to_deserialize = &bytes_left_to_deserialize[1..];
-                    }
+                    trace!("enum_ty_layout {:?}", enum_ty_layout);
+                    let len = bytes.len();
+                    let data = if len < 2 {
+                        bytes[0] as u128
+                    } else if len < 4 {
+                        u16::from_ne_bytes(*bytes.array_chunks().next().unwrap()) as u128
+                    } else if len < 8 {
+                        u32::from_ne_bytes(*bytes.array_chunks().next().unwrap()) as u128
+                    } else if len < 16 {
+                        u64::from_ne_bytes(*bytes.array_chunks().next().unwrap()) as u128
+                    } else {
+                        u128::from_ne_bytes(*bytes.array_chunks().next().unwrap())
+                    };
+                    let (discr_signed, discr_bits, discr_index, _discr_has_data) =
+                        self.get_discriminator_info(data, &enum_ty_layout);
+                    let discr_path = Path::new_discriminant(target_path.clone());
+                    let discr_data = if discr_signed {
+                        self.get_i128_const_val(discr_bits as i128)
+                    } else {
+                        self.get_u128_const_val(discr_bits)
+                    };
+                    self.bv.update_value_at(discr_path, discr_data);
                     let variant = &def.variants()[discr_index];
                     trace!("deserializing variant {:?}", variant);
                     for (i, field) in variant.fields.iter().enumerate() {
@@ -3323,6 +3334,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         }
     }
 
+    #[logfn_inputs(TRACE)]
     fn get_discriminator_info(
         &mut self,
         data: u128,
@@ -3333,8 +3345,11 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         let discr_index; // The index of the discriminant in the enum definition
         let discr_has_data; // A flag indicating if the enum constant has a sub-component
 
+        trace!("enum_ty_layout.ty {:?}", enum_ty_layout.ty);
         let discr_ty = enum_ty_layout.ty.discriminant_ty(self.bv.tcx);
+        trace!("discr_ty {:?}", discr_ty);
         let discr_ty_layout = self.type_visitor().layout_of(discr_ty).unwrap();
+        trace!("discr_ty_layout {:?}", discr_ty_layout);
         match enum_ty_layout.variants {
             Variants::Single { index } => {
                 // The enum only contains one variant.
@@ -3418,17 +3433,31 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         ref niche_variants,
                         niche_start,
                     } => {
-                        // A niche means that there are some optimizations in the enum layout.
-                        // For example, a value of type Option<char> is encoded as a 32-bit integer.
-                        // There exists one single data containing variant (Some(char)).
-                        // Other variants are encoded as niches with tag values starting as niche_start.
+                        // Niche (values invalid for a type) encoding the discriminant:
+                        // Discriminant and variant index coincide.
+                        // The variant `dataful_variant` contains a niche at an arbitrary
+                        // offset (field `tag_field` of the enum), which for a variant with
+                        // discriminant `d` is set to
+                        // `(d - niche_variants.start).wrapping_add(niche_start)`.
+                        //
+                        // For example, `Option<(usize, &T)>`  is represented such that
+                        // `None` has a null pointer for the second tuple field, and
+                        // `Some` is the identity function (with a non-null reference).
+                        trace!("dataful_variant {:?}", dataful_variant);
+                        trace!("niche_start {:?}", niche_start);
                         let variants_start = niche_variants.start().as_u32();
-                        let variant = if data >= niche_start {
+                        let variants_end = niche_variants.end().as_u32();
+                        let variant = if data >= niche_start
+                            && variants_end >= variants_start
+                            && (data - niche_start) <= (variants_end - variants_start).into()
+                        {
+                            trace!("data {:?}", data);
                             discr_has_data = false;
                             let variant_index_relative = (data - niche_start) as u32;
                             let variant_index = variants_start + variant_index_relative;
                             VariantIdx::from_u32(variant_index)
                         } else {
+                            trace!("data {:?}", data);
                             discr_has_data = true;
                             let fields = &variants[dataful_variant].fields();
                             checked_assume!(
