@@ -2651,10 +2651,14 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             let warn;
             if !refined_precondition_as_bool.unwrap_or(true) {
                 // The precondition is definitely false.
-                if entry_cond_as_bool.unwrap_or(false)
-                    && self.block_visitor.bv.function_being_analyzed_is_root()
-                {
-                    // We always get to this call and we are at the analysis root
+                if !entry_cond_as_bool.unwrap_or(true) {
+                    // The call is unreachable, so the precondition does not matter
+                    continue;
+                }
+                if self.block_visitor.bv.function_being_analyzed_is_root() {
+                    // This diagnostic says that the precondition is false and since
+                    // we know for certain that it will be false, should this call be reached,
+                    // it seems appropriate to issue an error message rather than a warning.
                     self.issue_diagnostic_for_call(precondition, &refined_condition, false);
                     return;
                 } else {
