@@ -1614,7 +1614,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
             if cond_as_bool.unwrap_or(false)
                 || self.current_environment.entry_condition.implies(cond_val)
             {
-                return (Some(true), None);
+                return (Some(true), entry_cond_as_bool);
             }
             if !cond_as_bool.unwrap_or(true)
                 || self
@@ -1622,7 +1622,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     .entry_condition
                     .implies_not(cond_val)
             {
-                return (Some(false), None);
+                return (Some(false), entry_cond_as_bool);
             }
             // The abstract domains are unable to decide if the entry condition is always true.
             // (If it could decide that the condition is always false, we wouldn't be here.)
