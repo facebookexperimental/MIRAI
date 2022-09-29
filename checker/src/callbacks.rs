@@ -12,6 +12,7 @@ use crate::options::Options;
 use crate::summaries::PersistentSummaryCache;
 
 use crate::type_visitor::TypeCache;
+use crate::utils;
 use log::info;
 use log_derive::*;
 use rustc_driver::Compilation;
@@ -128,6 +129,16 @@ impl MiraiCallbacks {
     /// Analyze the crate currently being compiled, using the information given in compiler and tcx.
     #[logfn(TRACE)]
     fn analyze_with_mirai<'tcx>(&mut self, compiler: &interface::Compiler, tcx: TyCtxt<'tcx>) {
+        if self.options.print_function_names {
+            for local_def_id in tcx.hir().body_owners() {
+                let def_id = local_def_id.to_def_id();
+                let span = tcx.def_span(def_id);
+                eprint!("{:?}: ", span);
+                let name = utils::def_id_as_qualified_name_str(tcx, def_id);
+                eprintln!("{}", name);
+            }
+            return;
+        }
         let output_dir = String::from(self.output_directory.to_str().expect("valid string"));
         let summary_store_path = if std::env::var("MIRAI_SHARE_PERSISTENT_STORE").is_ok() {
             output_dir
