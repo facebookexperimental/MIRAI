@@ -29,7 +29,7 @@ doctest = false # and no doc tests
 [dependencies]
 bincode = { version = "*", features = ["i128"] }
 cargo_metadata = "*"
-clap = "*"
+clap = "3.2"
 env_logger = "*"
 fs2 = "*"
 itertools = "*"

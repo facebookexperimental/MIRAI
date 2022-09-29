@@ -54,7 +54,11 @@ fn make_options_parser<'help>(running_test_harness: bool) -> Command<'help> {
             .long("call_graph_config")
             .takes_value(true)
             .help("Path call graph config.")
-            .long_help(r#"Path to a JSON file that configures call graph output. Please see the documentation for details (https://github.com/facebookexperimental/MIRAI/blob/main/documentation/CallGraph.md)."#));
+            .long_help(r#"Path to a JSON file that configures call graph output. Please see the documentation for details (https://github.com/facebookexperimental/MIRAI/blob/main/documentation/CallGraph.md)."#))
+        .arg(Arg::new("print_function_names")
+            .long("print_function_names")
+            .takes_value(false)
+            .help("Just print out the signatures of functions in the crate"));
     if running_test_harness {
         parser = parser.arg(Arg::new("test_only")
             .long("test_only")
@@ -76,6 +80,7 @@ pub struct Options {
     pub max_analysis_time_for_crate: u64,
     pub statistics: bool,
     pub call_graph_config: Option<String>,
+    pub print_function_names: bool,
 }
 
 /// Represents diag level.
@@ -212,6 +217,9 @@ impl Options {
         }
         if matches.is_present("call_graph_config") {
             self.call_graph_config = matches.value_of("call_graph_config").map(|s| s.to_string());
+        }
+        if matches.is_present("print_function_names") {
+            self.print_function_names = true;
         }
         args[rustc_args_start..].to_vec()
     }

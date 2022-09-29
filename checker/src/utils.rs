@@ -433,6 +433,32 @@ fn push_component_name(component_data: DefPathData, target: &mut String) {
     };
 }
 
+/// Returns a human readable string representation of the item defined by def_id.
+/// This is different from summary_key_str, in that it does not mangle type argument
+/// values into the item name and furthermore includes parameter types and the
+/// return types of functions. This is intended for use in call graphs.
+pub fn def_id_as_qualified_name_str(tcx: TyCtxt<'_>, def_id: DefId) -> Rc<str> {
+    let mut name = format!("/{}/", crate_name(tcx, def_id));
+    name.push_str(&tcx.def_path_str(def_id));
+    let fn_ty = tcx.type_of(def_id);
+    if fn_ty.is_fn() {
+        name.push('(');
+        let fn_sig = fn_ty.fn_sig(tcx).skip_binder();
+        let mut first = true;
+        for param_ty in fn_sig.inputs() {
+            if first {
+                first = false;
+            } else {
+                name.push(',')
+            }
+            name.push_str(&format!("{:?}", param_ty));
+        }
+        name.push_str(")->");
+        name.push_str(&format!("{:?}", fn_sig.output()));
+    }
+    Rc::from(name.as_str())
+}
+
 /// Returns a readable display name for a DefId. This name may not be unique.
 pub fn def_id_display_name(tcx: TyCtxt<'_>, def_id: DefId) -> String {
     struct PrettyDefId<'tcx>(DefId, TyCtxt<'tcx>);

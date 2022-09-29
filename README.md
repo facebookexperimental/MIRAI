@@ -43,6 +43,7 @@ string which can contain any of the following flags:
 - `--single_func <name>`: the name of a specific function you want to analyze.
 - `--body_analysis_timeout <seconds>`: the maximum number of seconds to spend analyzing a function body.
 - `--call_graph_config <path_to_config>`: path to configuration file for call graph generator (see [Call Graph Generator documentation](documentation/CallGraph.md)). No call graph will be generated if this is not specified.
+- `--print_function_names`: just print the source location and fully qualified function signature of every function.
 - `--`: any arguments after this marker are passed on to rustc.
 
 You can get some insight into the inner workings of MIRAI by setting the verbosity level of log output to one of 
