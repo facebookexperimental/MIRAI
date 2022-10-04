@@ -67,7 +67,9 @@ jobs:
         env:
           CARGO_INCREMENTAL: 0
           RUSTFLAGS: "-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Zpanic_abort_tests"
-      - uses: actions-rs/grcov@v0.1
+
+      - name: Setup grcov
+        uses: actions-rs/grcov@v0.1
 
       - name: Run grcov
         run: |
@@ -75,8 +77,9 @@ jobs:
           grcov cov.zip -s . -t lcov --llvm --ignore-not-existing --ignore "/*" -o lcov.info
 
       - name: Upload coverage data to codecov.io
-        uses: codecov/codecov-action@v1
+        uses: codecov/codecov-action@v3
         with:
+          token: ${{ secrets.CODECOV_TOKEN }}
           files: "lcov.info"
 
   mirai_on_mirai_macos:
