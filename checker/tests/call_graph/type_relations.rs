@@ -141,7 +141,7 @@ commit;
   ],
   "callables": [
     {
-      "name": "type_relations.implement.fmt",
+      "name": "type_relations.implement_type_relations_Foo.fmt",
       "file_index": 0,
       "first_line": 8,
       "local": true
@@ -177,7 +177,7 @@ commit;
       "local": true
     },
     {
-      "name": "core.slice.implement.iter",
+      "name": "core.slice.implement_slice_generic_par_T.iter",
       "file_index": 2,
       "first_line": 738,
       "local": true
@@ -225,7 +225,7 @@ commit;
       "local": false
     },
     {
-      "name": "alloc.alloc.implement.alloc_impl",
+      "name": "alloc.alloc.implement_alloc_alloc_Global.alloc_impl",
       "file_index": 6,
       "first_line": 172,
       "local": true
@@ -285,7 +285,7 @@ commit;
       "local": true
     },
     {
-      "name": "alloc.slice.implement.into_vec",
+      "name": "alloc.slice.implement_slice_generic_par_T.into_vec",
       "file_index": 11,
       "first_line": 458,
       "local": true
