@@ -372,26 +372,21 @@ pub fn summary_key_str(tcx: TyCtxt<'_>, def_id: DefId) -> Rc<str> {
             name.push('.');
         }
         push_component_name(component.data, &mut name);
-        if component.disambiguator != 0 {
-            name.push('_');
-            if component.data == DefPathData::Impl {
-                let parent_def_id = tcx.parent(def_id);
-                let parent_def_kind = tcx.def_kind(parent_def_id);
-                if matches!(
-                    parent_def_kind,
-                    DefKind::Struct
-                        | DefKind::Union
-                        | DefKind::Enum
-                        | DefKind::Variant
-                        | DefKind::TyAlias
-                        | DefKind::Impl
-                ) {
-                    append_mangled_type(&mut name, tcx.type_of(parent_def_id), tcx);
-                    continue;
-                }
+        if component.data == DefPathData::Impl {
+            let parent_def_id = tcx.parent(def_id);
+            let parent_def_kind = tcx.def_kind(parent_def_id);
+            if matches!(
+                parent_def_kind,
+                DefKind::Struct
+                    | DefKind::Union
+                    | DefKind::Enum
+                    | DefKind::Variant
+                    | DefKind::TyAlias
+                    | DefKind::Impl
+            ) {
+                name.push('_');
+                append_mangled_type(&mut name, tcx.type_of(parent_def_id), tcx);
             }
-            let da = component.disambiguator.to_string();
-            name.push_str(da.as_str());
         }
     }
     Rc::from(name.as_str())

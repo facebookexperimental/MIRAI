@@ -198,39 +198,12 @@ pub mod alloc {
                     );
                 }
             }
-        }
-        pub mod implement_1 {
+
             fn assert_failed(index: usize, len: usize) -> ! {
                 panic!(
                     "insertion index (is {}) should be <= len (is {})",
                     index, len
                 );
-            }
-            pub mod insert {
-                fn assert_failed(index: usize, len: usize) -> ! {
-                    panic!(
-                        "insertion index (is {}) should be <= len (is {})",
-                        index, len
-                    );
-                }
-            }
-            pub mod remove {
-                fn assert_failed(index: usize, len: usize) -> ! {
-                    panic!("removal index (is {}) should be < len (is {})", index, len);
-                }
-            }
-            pub mod split_off {
-                fn assert_failed(at: usize, len: usize) -> ! {
-                    panic!("`at` split index (is {}) should be <= len (is {})", at, len);
-                }
-            }
-            pub mod swap_remove {
-                fn assert_failed(index: usize, len: usize) -> ! {
-                    panic!(
-                        "swap_remove index (is {}) should be < len (is {})",
-                        index, len
-                    );
-                }
             }
         }
         pub mod SpecExtend {
@@ -3493,7 +3466,7 @@ pub mod core {
             // reasons that are beyond the analyzer.
             assume_unreachable!();
         }
-        pub mod implement_3 {
+        pub mod implement {
             pub mod cloned {
                 default_contract!(closure);
             }
@@ -3904,7 +3877,7 @@ pub mod libc {
     }
 
     pub mod unix {
-        pub mod foreign_1 {
+        pub mod foreign {
             pub fn dlsym() -> u64 {
                 0
             }
@@ -4260,7 +4233,7 @@ pub mod ref_cast {
 pub mod rpds {
     pub mod map {
         pub mod red_black_tree_map {
-            pub mod implement_1 {
+            pub mod implement {
                 pub mod insert {
                     default_contract!(ins);
                 }
@@ -4480,7 +4453,7 @@ pub mod rustc_query_system {
             }
         }
         pub mod graph {
-            pub mod implement_3 {
+            pub mod implement {
                 pub mod with_task_impl {
                     default_contract!(closure);
                 }
@@ -5207,10 +5180,7 @@ pub mod z3_sys {
     default_contract!(Z3_mk_string_symbol);
     default_contract!(Z3_mk_uninterpreted_sort);
     default_contract!(Z3_set_param_value);
-
-    pub mod _2 {
-        default_contract!(Z3_mk_fpa_round_nearest_ties_to_even);
-        default_contract!(Z3_mk_fpa_sort_32);
-        default_contract!(Z3_mk_fpa_sort_64);
-    }
+    default_contract!(Z3_mk_fpa_round_nearest_ties_to_even);
+    default_contract!(Z3_mk_fpa_sort_32);
+    default_contract!(Z3_mk_fpa_sort_64);
 }
