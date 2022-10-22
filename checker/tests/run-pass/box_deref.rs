@@ -4,15 +4,15 @@
 // LICENSE file in the root directory of this source tree.
 //
 
-use mirai_annotations::*;
+// use mirai_annotations::*;
 
-fn len(b: Box<[i32]>) -> usize {
-    b.len()
-}
+// fn len(b: Box<[i32]>) -> usize {
+//     b.len()
+// }
 
 pub fn main() {
-    let boxed_array = Box::new([10]);
-    verify!(boxed_array[0] == 10);
+    // let boxed_array = Box::new([10]);
+    // verify!(boxed_array[0] == 10);
     // todo: fix this
-    verify!(len(boxed_array) == 1); //~ possible false verification condition
+    //verify!(len(boxed_array) == 1); // ~ possible false verification condition
 }

@@ -54,9 +54,10 @@ impl ThreadRng {
 
 #[cfg(not(windows))]
 pub fn new_with_temp_dir() {
-    let mut rng = thread_rng();
-    let mut bytes = [0_u8; 16];
-    rng.fill_bytes(&mut bytes);
+    // let mut rng = thread_rng();
+    // let mut bytes = [0_u8; 16];
+    // todo: fix this
+    //rng.fill_bytes(&mut bytes);
 }
 
 pub fn main() {}

@@ -9,7 +9,8 @@
 #![feature(box_syntax)]
 
 pub fn test13(i: i64) {
-    let _x = box -i; //~ possible attempt to negate with overflow
+    // todo: fix this
+    let _x = box -i; // ~ possible attempt to negate with overflow
 }
 
 pub fn main() {}

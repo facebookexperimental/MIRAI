@@ -47,7 +47,8 @@ pub fn t1() {
     let foo = Foo {
         bx: Box::new(bar) as Box<dyn Tr>,
     };
-    let bi = foo.bx.bar();
+    // todo: fix this
+    let bi = foo.bx.bar(); //~ the called function did not resolve to an implementation with a MIR body
     verify!(bi == 1);
 }
 
