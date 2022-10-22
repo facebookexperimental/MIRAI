@@ -82,57 +82,59 @@ insert Edge(3,0,4);
 insert EdgeType(0,3);
 insert EdgeType(1,8);
 insert EdgeType(2,21);
-insert EdgeType(3,24);
-insert EqType(21,24);
-insert EqType(21,26);
-insert EqType(26,24);
-insert EqType(28,27);
-insert EqType(3,27);
+insert EdgeType(3,25);
+insert EqType(21,25);
+insert EqType(21,27);
+insert EqType(27,25);
+insert EqType(29,28);
 insert EqType(3,28);
+insert EqType(3,29);
 insert EqType(3,8);
-insert EqType(8,27);
 insert EqType(8,28);
-insert Member(21,27);
+insert EqType(8,29);
 insert Member(21,28);
+insert Member(21,29);
 insert Member(21,3);
 insert Member(21,8);
-insert Member(24,27);
-insert Member(24,28);
-insert Member(24,3);
-insert Member(24,8);
-insert Member(25,26);
+insert Member(25,28);
+insert Member(25,29);
+insert Member(25,3);
+insert Member(25,8);
 insert Member(26,27);
-insert Member(26,28);
-insert Member(26,3);
-insert Member(26,8);
+insert Member(27,28);
+insert Member(27,29);
+insert Member(27,3);
+insert Member(27,8);
 commit;*/
 
 /* EXPECTED:TYPEMAP{
   "3": "&Foo",
   "8": "&mut Foo",
   "21": "&[Foo]",
-  "24": "std::vec::Vec<Foo>",
-  "25": "Bar",
-  "26": "[test::Foo]",
-  "27": "test::Foo",
-  "28": "Foo"
+  "25": "std::vec::Vec<Foo>",
+  "26": "Bar",
+  "27": "[test::Foo]",
+  "28": "test::Foo",
+  "29": "Foo"
 }*/
 
 /* EXPECTED:CALL_SITES{
   "files": [
     "tests/call_graph/type_relations.rs",
-    "/rustc/c2804e6ec2c29a5c7368600ea173b890e2655c3d/library/core/src/fmt/mod.rs",
-    "/rustc/c2804e6ec2c29a5c7368600ea173b890e2655c3d/library/core/src/slice/mod.rs",
-    "/rustc/c2804e6ec2c29a5c7368600ea173b890e2655c3d/library/core/src/slice/iter/macros.rs",
-    "/rustc/c2804e6ec2c29a5c7368600ea173b890e2655c3d/library/alloc/src/vec/mod.rs",
-    "/rustc/c2804e6ec2c29a5c7368600ea173b890e2655c3d/library/std/src/io/stdio.rs",
-    "/rustc/c2804e6ec2c29a5c7368600ea173b890e2655c3d/library/alloc/src/boxed.rs",
-    "/rustc/c2804e6ec2c29a5c7368600ea173b890e2655c3d/library/core/src/ptr/mod.rs",
-    "/rustc/c2804e6ec2c29a5c7368600ea173b890e2655c3d/library/alloc/src/slice.rs",
-    "/rustc/c2804e6ec2c29a5c7368600ea173b890e2655c3d/library/alloc/src/alloc.rs",
-    "/rustc/c2804e6ec2c29a5c7368600ea173b890e2655c3d/library/core/src/ptr/non_null.rs",
-    "/rustc/c2804e6ec2c29a5c7368600ea173b890e2655c3d/library/core/src/slice/iter.rs",
-    "/rustc/c2804e6ec2c29a5c7368600ea173b890e2655c3d/library/core/src/intrinsics.rs"
+    "/rustc/2287107588d92889d282e6cd3c1ca5df34cd34a5/library/core/src/fmt/mod.rs",
+    "/rustc/2287107588d92889d282e6cd3c1ca5df34cd34a5/library/core/src/slice/mod.rs",
+    "/rustc/2287107588d92889d282e6cd3c1ca5df34cd34a5/library/core/src/slice/iter/macros.rs",
+    "/rustc/2287107588d92889d282e6cd3c1ca5df34cd34a5/library/alloc/src/vec/mod.rs",
+    "/rustc/2287107588d92889d282e6cd3c1ca5df34cd34a5/library/std/src/io/stdio.rs",
+    "/rustc/2287107588d92889d282e6cd3c1ca5df34cd34a5/library/alloc/src/boxed.rs",
+    "/rustc/2287107588d92889d282e6cd3c1ca5df34cd34a5/library/core/src/ptr/mut_ptr.rs",
+    "/rustc/2287107588d92889d282e6cd3c1ca5df34cd34a5/library/core/src/ptr/mod.rs",
+    "/rustc/2287107588d92889d282e6cd3c1ca5df34cd34a5/library/alloc/src/slice.rs",
+    "/rustc/2287107588d92889d282e6cd3c1ca5df34cd34a5/library/alloc/src/alloc.rs",
+    "/rustc/2287107588d92889d282e6cd3c1ca5df34cd34a5/library/core/src/ptr/non_null.rs",
+    "/rustc/2287107588d92889d282e6cd3c1ca5df34cd34a5/library/core/src/slice/iter.rs",
+    "/rustc/2287107588d92889d282e6cd3c1ca5df34cd34a5/library/core/src/ptr/const_ptr.rs",
+    "/rustc/2287107588d92889d282e6cd3c1ca5df34cd34a5/library/core/src/intrinsics.rs"
   ],
   "callables": [
     {
@@ -144,7 +146,7 @@ commit;*/
     {
       "name": "core.fmt.implement_core_fmt_Formatter.debug_struct_field1_finish",
       "file_index": 1,
-      "first_line": 1976,
+      "first_line": 1977,
       "local": false
     },
     {
@@ -244,56 +246,50 @@ commit;*/
       "local": true
     },
     {
-      "name": "alloc.vec.implement_alloc_vec_Vec_generic_par_T_generic_par_A.as_ptr",
-      "file_index": 4,
-      "first_line": 1168,
+      "name": "core.ptr.mut_ptr.implement_pointer_mut_generic_par_T.is_null",
+      "file_index": 7,
+      "first_line": 35,
       "local": true
     },
     {
       "name": "core.ptr.drop_in_place",
-      "file_index": 7,
+      "file_index": 8,
       "first_line": 487,
       "local": true
     },
     {
-      "name": "alloc.vec.implement_alloc_vec_Vec_generic_par_T_generic_par_A.as_mut_ptr",
-      "file_index": 4,
-      "first_line": 1205,
-      "local": true
-    },
-    {
       "name": "alloc.slice.implement_slice_generic_par_T.into_vec",
-      "file_index": 8,
+      "file_index": 9,
       "first_line": 458,
       "local": true
     },
     {
       "name": "alloc.alloc.exchange_malloc",
-      "file_index": 9,
+      "file_index": 10,
       "first_line": 324,
       "local": false
     },
     {
       "name": "alloc.alloc.implement_alloc_alloc_Global.alloc_impl",
-      "file_index": 9,
+      "file_index": 10,
       "first_line": 172,
       "local": true
     },
     {
       "name": "core.ptr.non_null.implement_core_ptr_non_null_NonNull_generic_par_T.new",
-      "file_index": 10,
+      "file_index": 11,
       "first_line": 218,
       "local": true
     },
     {
       "name": "core.slice.iter.implement_core_slice_iter_Iter_generic_par_T.new",
-      "file_index": 11,
+      "file_index": 12,
       "first_line": 88,
       "local": true
     },
     {
       "name": "alloc.slice.hack.into_vec",
-      "file_index": 8,
+      "file_index": 9,
       "first_line": 97,
       "local": true
     },
@@ -304,14 +300,26 @@ commit;*/
       "local": true
     },
     {
-      "name": "core.intrinsics.foreign.ptr_guaranteed_eq",
-      "file_index": 12,
-      "first_line": 2022,
+      "name": "core.ptr.const_ptr.implement_pointer_const_generic_par_T.is_null",
+      "file_index": 13,
+      "first_line": 36,
+      "local": true
+    },
+    {
+      "name": "core.ptr.mut_ptr.implement_pointer_mut_generic_par_T.guaranteed_eq",
+      "file_index": 7,
+      "first_line": 721,
+      "local": true
+    },
+    {
+      "name": "core.intrinsics.foreign.ptr_guaranteed_cmp",
+      "file_index": 14,
+      "first_line": 2026,
       "local": false
     },
     {
       "name": "core.intrinsics.foreign.assert_inhabited",
-      "file_index": 12,
+      "file_index": 14,
       "first_line": 940,
       "local": false
     }
@@ -516,15 +524,22 @@ commit;*/
     [
       4,
       2921,
+      62,
+      9,
+      18
+    ],
+    [
+      4,
+      2921,
       13,
       9,
       19
     ],
     [
-      4,
-      2921,
-      62,
-      9,
+      0,
+      39,
+      14,
+      10,
       20
     ],
     [
@@ -535,102 +550,102 @@ commit;*/
       21
     ],
     [
-      0,
-      39,
-      14,
       10,
-      22
-    ],
-    [
-      9,
       178,
       27,
-      23,
-      24
+      22,
+      23
     ],
     [
       2,
       739,
       9,
       6,
-      25
+      24
     ],
     [
-      8,
+      9,
       100,
       30,
-      26,
+      25,
       14
     ],
     [
-      8,
+      9,
       101,
       13,
-      26,
-      27
-    ],
-    [
-      8,
-      103,
-      5,
-      26,
-      17
-    ],
-    [
-      8,
-      460,
-      9,
-      21,
+      25,
       26
     ],
     [
-      10,
-      219,
-      13,
-      24,
-      28
+      9,
+      103,
+      5,
+      25,
+      17
     ],
     [
-      4,
-      1173,
+      9,
+      460,
+      9,
+      20,
+      25
+    ],
+    [
+      12,
+      92,
       21,
+      24,
+      27
+    ],
+    [
+      12,
+      135,
+      1,
+      7,
+      18
+    ],
+    [
+      12,
+      135,
+      1,
+      7,
+      27
+    ],
+    [
+      11,
+      219,
+      13,
+      23,
+      18
+    ],
+    [
+      7,
+      38,
+      15,
       18,
       28
     ],
     [
-      11,
-      135,
-      1,
       7,
-      28
+      725,
+      9,
+      28,
+      29
     ],
     [
-      4,
-      1210,
-      21,
-      20,
-      28
+      13,
+      39,
+      15,
+      27,
+      29
     ],
     [
       6,
       1131,
       30,
       15,
-      29
-    ],
-    [
-      11,
-      92,
-      21,
-      25,
-      28
-    ],
-    [
-      11,
-      135,
-      1,
-      7,
-      28
+      30
     ]
   ]
 }*/
