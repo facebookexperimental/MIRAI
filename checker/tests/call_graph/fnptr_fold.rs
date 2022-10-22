@@ -68,8 +68,8 @@ commit;
 /* EXPECTED:CALL_SITES{
   "files": [
     "tests/call_graph/fnptr_fold.rs",
-    "/rustc/78a891d364a7358ed9eb9c93099ba2f3e6817ca6/library/std/src/io/stdio.rs",
-    "/rustc/78a891d364a7358ed9eb9c93099ba2f3e6817ca6/library/core/src/fmt/mod.rs"
+    "/rustc/c2804e6ec2c29a5c7368600ea173b890e2655c3d/library/std/src/io/stdio.rs",
+    "/rustc/c2804e6ec2c29a5c7368600ea173b890e2655c3d/library/core/src/fmt/mod.rs"
   ],
   "callables": [
     {
@@ -99,7 +99,7 @@ commit;
     {
       "name": "std.io.stdio._print",
       "file_index": 1,
-      "first_line": 1026,
+      "first_line": 1029,
       "local": false
     },
     {

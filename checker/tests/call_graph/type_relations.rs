@@ -121,18 +121,18 @@ commit;*/
 /* EXPECTED:CALL_SITES{
   "files": [
     "tests/call_graph/type_relations.rs",
-    "/rustc/78a891d364a7358ed9eb9c93099ba2f3e6817ca6/library/core/src/fmt/mod.rs",
-    "/rustc/78a891d364a7358ed9eb9c93099ba2f3e6817ca6/library/core/src/slice/mod.rs",
-    "/rustc/78a891d364a7358ed9eb9c93099ba2f3e6817ca6/library/core/src/slice/iter/macros.rs",
-    "/rustc/78a891d364a7358ed9eb9c93099ba2f3e6817ca6/library/alloc/src/vec/mod.rs",
-    "/rustc/78a891d364a7358ed9eb9c93099ba2f3e6817ca6/library/std/src/io/stdio.rs",
-    "/rustc/78a891d364a7358ed9eb9c93099ba2f3e6817ca6/library/alloc/src/boxed.rs",
-    "/rustc/78a891d364a7358ed9eb9c93099ba2f3e6817ca6/library/core/src/intrinsics.rs",
-    "/rustc/78a891d364a7358ed9eb9c93099ba2f3e6817ca6/library/core/src/ptr/mod.rs",
-    "/rustc/78a891d364a7358ed9eb9c93099ba2f3e6817ca6/library/alloc/src/slice.rs",
-    "/rustc/78a891d364a7358ed9eb9c93099ba2f3e6817ca6/library/alloc/src/alloc.rs",
-    "/rustc/78a891d364a7358ed9eb9c93099ba2f3e6817ca6/library/core/src/ptr/non_null.rs",
-    "/rustc/78a891d364a7358ed9eb9c93099ba2f3e6817ca6/library/core/src/slice/iter.rs"
+    "/rustc/c2804e6ec2c29a5c7368600ea173b890e2655c3d/library/core/src/fmt/mod.rs",
+    "/rustc/c2804e6ec2c29a5c7368600ea173b890e2655c3d/library/core/src/slice/mod.rs",
+    "/rustc/c2804e6ec2c29a5c7368600ea173b890e2655c3d/library/core/src/slice/iter/macros.rs",
+    "/rustc/c2804e6ec2c29a5c7368600ea173b890e2655c3d/library/alloc/src/vec/mod.rs",
+    "/rustc/c2804e6ec2c29a5c7368600ea173b890e2655c3d/library/std/src/io/stdio.rs",
+    "/rustc/c2804e6ec2c29a5c7368600ea173b890e2655c3d/library/alloc/src/boxed.rs",
+    "/rustc/c2804e6ec2c29a5c7368600ea173b890e2655c3d/library/core/src/ptr/mod.rs",
+    "/rustc/c2804e6ec2c29a5c7368600ea173b890e2655c3d/library/alloc/src/slice.rs",
+    "/rustc/c2804e6ec2c29a5c7368600ea173b890e2655c3d/library/alloc/src/alloc.rs",
+    "/rustc/c2804e6ec2c29a5c7368600ea173b890e2655c3d/library/core/src/ptr/non_null.rs",
+    "/rustc/c2804e6ec2c29a5c7368600ea173b890e2655c3d/library/core/src/slice/iter.rs",
+    "/rustc/c2804e6ec2c29a5c7368600ea173b890e2655c3d/library/core/src/intrinsics.rs"
   ],
   "callables": [
     {
@@ -210,7 +210,7 @@ commit;*/
     {
       "name": "std.io.stdio._print",
       "file_index": 5,
-      "first_line": 1026,
+      "first_line": 1029,
       "local": false
     },
     {
@@ -250,10 +250,10 @@ commit;*/
       "local": true
     },
     {
-      "name": "core.intrinsics.foreign.assume",
+      "name": "core.ptr.drop_in_place",
       "file_index": 7,
-      "first_line": 834,
-      "local": false
+      "first_line": 487,
+      "local": true
     },
     {
       "name": "alloc.vec.implement_alloc_vec_Vec_generic_par_T_generic_par_A.as_mut_ptr",
@@ -262,44 +262,38 @@ commit;*/
       "local": true
     },
     {
-      "name": "core.ptr.drop_in_place",
-      "file_index": 8,
-      "first_line": 487,
-      "local": true
-    },
-    {
       "name": "alloc.slice.implement_slice_generic_par_T.into_vec",
-      "file_index": 9,
+      "file_index": 8,
       "first_line": 458,
       "local": true
     },
     {
       "name": "alloc.alloc.exchange_malloc",
-      "file_index": 10,
+      "file_index": 9,
       "first_line": 324,
       "local": false
     },
     {
       "name": "alloc.alloc.implement_alloc_alloc_Global.alloc_impl",
-      "file_index": 10,
+      "file_index": 9,
       "first_line": 172,
       "local": true
     },
     {
       "name": "core.ptr.non_null.implement_core_ptr_non_null_NonNull_generic_par_T.new",
-      "file_index": 11,
+      "file_index": 10,
       "first_line": 218,
       "local": true
     },
     {
       "name": "core.slice.iter.implement_core_slice_iter_Iter_generic_par_T.new",
-      "file_index": 12,
+      "file_index": 11,
       "first_line": 88,
       "local": true
     },
     {
       "name": "alloc.slice.hack.into_vec",
-      "file_index": 9,
+      "file_index": 8,
       "first_line": 97,
       "local": true
     },
@@ -311,13 +305,13 @@ commit;*/
     },
     {
       "name": "core.intrinsics.foreign.ptr_guaranteed_eq",
-      "file_index": 7,
+      "file_index": 12,
       "first_line": 2022,
       "local": false
     },
     {
       "name": "core.intrinsics.foreign.assert_inhabited",
-      "file_index": 7,
+      "file_index": 12,
       "first_line": 940,
       "local": false
     }
@@ -514,20 +508,6 @@ commit;*/
     ],
     [
       4,
-      1173,
-      13,
-      18,
-      19
-    ],
-    [
-      4,
-      1210,
-      13,
-      20,
-      19
-    ],
-    [
-      4,
       2533,
       40,
       11,
@@ -538,7 +518,7 @@ commit;*/
       2921,
       13,
       9,
-      21
+      19
     ],
     [
       4,
@@ -552,126 +532,105 @@ commit;*/
       39,
       14,
       10,
-      22
+      21
     ],
     [
       0,
       39,
       14,
       10,
-      23
+      22
     ],
     [
-      10,
+      9,
       178,
       27,
-      24,
-      25
+      23,
+      24
     ],
     [
       2,
       739,
       9,
       6,
-      26
+      25
     ],
     [
-      9,
+      8,
       100,
       30,
-      27,
+      26,
       14
     ],
     [
-      9,
+      8,
       101,
       13,
-      27,
-      28
-    ],
-    [
-      9,
-      103,
-      5,
-      27,
-      17
-    ],
-    [
-      9,
-      460,
-      9,
-      22,
+      26,
       27
     ],
     [
-      12,
-      92,
-      13,
+      8,
+      103,
+      5,
       26,
-      19
+      17
     ],
     [
-      12,
-      135,
-      1,
-      7,
-      19
+      8,
+      460,
+      9,
+      21,
+      26
     ],
     [
-      12,
-      135,
-      1,
-      7,
-      19
-    ],
-    [
-      11,
+      10,
       219,
       13,
-      25,
-      29
+      24,
+      28
     ],
     [
       4,
       1173,
       21,
       18,
-      29
+      28
     ],
     [
-      12,
+      11,
       135,
       1,
       7,
-      29
+      28
     ],
     [
       4,
       1210,
       21,
       20,
-      29
+      28
     ],
     [
       6,
       1131,
       30,
       15,
-      30
-    ],
-    [
-      12,
-      92,
-      21,
-      26,
       29
     ],
     [
-      12,
+      11,
+      92,
+      21,
+      25,
+      28
+    ],
+    [
+      11,
       135,
       1,
       7,
-      29
+      28
     ]
   ]
 }*/

@@ -130,8 +130,8 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             mir::StatementKind::Retag(retag_kind, place) => self.visit_retag(*retag_kind, place),
             mir::StatementKind::AscribeUserType(..) => assume_unreachable!(),
             mir::StatementKind::Coverage(..) => (),
-            mir::StatementKind::CopyNonOverlapping(box ref copy_info) => {
-                self.visit_copy_non_overlapping(copy_info)
+            mir::StatementKind::Intrinsic(box non_diverging_intrinsic) => {
+                self.visit_non_diverging_intrinsic(non_diverging_intrinsic);
             }
             mir::StatementKind::Nop => (),
         }
@@ -159,6 +159,22 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         self.type_visitor_mut()
             .set_path_rustc_type(path.clone(), pty);
         self.visit_rvalue(path, rvalue);
+    }
+
+    fn visit_non_diverging_intrinsic(
+        &mut self,
+        visit_non_diverging_intrinsic: &mir::NonDivergingIntrinsic<'tcx>,
+    ) {
+        match visit_non_diverging_intrinsic {
+            mir::NonDivergingIntrinsic::Assume(operand) => {
+                let source_val = self.visit_operand(operand);
+                self.bv.current_environment.entry_condition =
+                    self.bv.current_environment.entry_condition.and(source_val);
+            }
+            mir::NonDivergingIntrinsic::CopyNonOverlapping(copy_info) => {
+                self.visit_copy_non_overlapping(copy_info);
+            }
+        }
     }
 
     /// Denotes a call to the intrinsic function copy_nonoverlapping, where `src` and `dst` denotes the

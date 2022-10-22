@@ -18,7 +18,7 @@ use rustc_middle::mir;
 use rustc_middle::ty::subst::{GenericArg, GenericArgKind, InternalSubsts, SubstsRef};
 use rustc_middle::ty::{
     AdtDef, Const, ConstKind, ExistentialPredicate, ExistentialProjection, ExistentialTraitRef,
-    FnSig, ParamTy, Term, Ty, TyCtxt, TyKind, TypeAndMut,
+    FnSig, ParamTy, Ty, TyCtxt, TyKind, TypeAndMut,
 };
 use rustc_target::abi::VariantIdx;
 
@@ -1152,13 +1152,11 @@ impl<'tcx> TypeVisitor<'tcx> {
                                 substs,
                                 term,
                             }) => {
-                                if let Term::Ty(ty) = term {
+                                if let Some(ty) = term.ty() {
                                     ExistentialPredicate::Projection(ExistentialProjection {
                                         item_def_id,
                                         substs: self.specialize_substs(substs, map),
-                                        term: Term::Ty(
-                                            self.specialize_generic_argument_type(ty, map),
-                                        ),
+                                        term: self.specialize_generic_argument_type(ty, map).into(),
                                     })
                                 } else {
                                     ExistentialPredicate::Projection(ExistentialProjection {
