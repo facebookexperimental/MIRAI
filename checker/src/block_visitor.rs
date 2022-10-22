@@ -3445,7 +3445,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         discr_has_data = false;
                     }
                     TagEncoding::Niche {
-                        dataful_variant,
+                        untagged_variant,
                         ref niche_variants,
                         niche_start,
                     } => {
@@ -3459,7 +3459,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         // For example, `Option<(usize, &T)>`  is represented such that
                         // `None` has a null pointer for the second tuple field, and
                         // `Some` is the identity function (with a non-null reference).
-                        trace!("dataful_variant {:?}", dataful_variant);
+                        trace!("untagged_variant {:?}", untagged_variant);
                         trace!("niche_start {:?}", niche_start);
                         let variants_start = niche_variants.start().as_u32();
                         let variants_end = niche_variants.end().as_u32();
@@ -3475,14 +3475,14 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         } else {
                             trace!("data {:?}", data);
                             discr_has_data = true;
-                            let fields = &variants[dataful_variant].fields();
+                            let fields = &variants[untagged_variant].fields();
                             checked_assume!(
                                 fields.count() == 1
                                     && fields.offset(0).bytes() == 0
                                     && fields.memory_index(0) == 0,
                                 "the data containing variant should contain a single sub-component"
                             );
-                            dataful_variant
+                            untagged_variant
                         };
                         discr_bits = discr_ty_layout.size.truncate(variant.as_u32() as u128);
                         discr_index = variant;
