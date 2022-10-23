@@ -1137,7 +1137,7 @@ impl<'tcx> TypeVisitor<'tcx> {
                 let specialized_fn_sig = fn_sig.map_bound(map_fn_sig);
                 self.tcx.mk_fn_ptr(specialized_fn_sig)
             }
-            TyKind::Dynamic(predicates, region) => {
+            TyKind::Dynamic(predicates, region, kind) => {
                 let specialized_predicates = predicates.iter().map(
                     |bound_pred: rustc_middle::ty::Binder<'_, ExistentialPredicate<'tcx>>| {
                         bound_pred.map_bound(|pred| match pred {
@@ -1174,6 +1174,7 @@ impl<'tcx> TypeVisitor<'tcx> {
                     self.tcx
                         .mk_poly_existential_predicates(specialized_predicates),
                     *region,
+                    *kind,
                 )
             }
             TyKind::Closure(def_id, substs) => {

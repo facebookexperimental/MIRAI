@@ -2053,7 +2053,9 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             | mir::CastKind::PointerFromExposedAddress
             // All sorts of pointer-to-pointer casts. Note that reference-to-raw-ptr casts are
             // translated into `&raw mut/const *r`, i.e., they are not actually casts.
-            | mir::CastKind::Pointer(..) => {
+            | mir::CastKind::Pointer(..)
+            // Cast into a dyn* object.
+            | mir::CastKind::DynStar => {
                 // The value remains unchanged, but pointers may be fat, so use copy_or_move_elements
                 let (is_move, place) = match operand {
                     mir::Operand::Copy(place) => (false, place),

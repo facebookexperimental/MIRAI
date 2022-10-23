@@ -68,8 +68,8 @@ commit;
 /* EXPECTED:CALL_SITES{
   "files": [
     "tests/call_graph/fnptr_fold.rs",
-    "/rustc/2287107588d92889d282e6cd3c1ca5df34cd34a5/library/std/src/io/stdio.rs",
-    "/rustc/2287107588d92889d282e6cd3c1ca5df34cd34a5/library/core/src/fmt/mod.rs"
+    "/rustc/750bd1a7ff3e010611b97ee75d30b7cbf5f3a03c/library/std/src/io/stdio.rs",
+    "/rustc/750bd1a7ff3e010611b97ee75d30b7cbf5f3a03c/library/core/src/fmt/mod.rs"
   ],
   "callables": [
     {

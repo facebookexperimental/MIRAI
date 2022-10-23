@@ -231,19 +231,17 @@ impl<'compilation, 'tcx> CrateVisitor<'compilation, 'tcx> {
                         mir::Rvalue::Use(mir::Operand::Constant(box ref con)),
                     )) = s.kind
                     {
-                        if let rustc_middle::ty::ConstKind::Unevaluated(Unevaluated {
-                            def: def_ty,
-                            ..
-                        }) = con
-                            .literal
-                            .const_for_ty()
-                            .expect("expected function literal to have type")
-                            .kind()
-                        {
-                            result.push(utils::def_id_display_name(
-                                self.tcx,
-                                def_ty.def_id_for_type_of(),
-                            ));
+                        if let mir::ConstantKind::Ty(c) = con.literal {
+                            if let rustc_middle::ty::ConstKind::Unevaluated(Unevaluated {
+                                def: def_ty,
+                                ..
+                            }) = c.kind()
+                            {
+                                result.push(utils::def_id_display_name(
+                                    self.tcx,
+                                    def_ty.def_id_for_type_of(),
+                                ));
+                            }
                         }
                     }
                 }
