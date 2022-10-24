@@ -121,20 +121,20 @@ commit;*/
 /* EXPECTED:CALL_SITES{
   "files": [
     "tests/call_graph/type_relations.rs",
-    "/rustc/750bd1a7ff3e010611b97ee75d30b7cbf5f3a03c/library/core/src/fmt/mod.rs",
-    "/rustc/750bd1a7ff3e010611b97ee75d30b7cbf5f3a03c/library/core/src/slice/mod.rs",
-    "/rustc/750bd1a7ff3e010611b97ee75d30b7cbf5f3a03c/library/core/src/slice/iter/macros.rs",
-    "/rustc/750bd1a7ff3e010611b97ee75d30b7cbf5f3a03c/library/alloc/src/vec/mod.rs",
-    "/rustc/750bd1a7ff3e010611b97ee75d30b7cbf5f3a03c/library/std/src/io/stdio.rs",
-    "/rustc/750bd1a7ff3e010611b97ee75d30b7cbf5f3a03c/library/alloc/src/boxed.rs",
-    "/rustc/750bd1a7ff3e010611b97ee75d30b7cbf5f3a03c/library/core/src/ptr/mut_ptr.rs",
-    "/rustc/750bd1a7ff3e010611b97ee75d30b7cbf5f3a03c/library/core/src/ptr/mod.rs",
-    "/rustc/750bd1a7ff3e010611b97ee75d30b7cbf5f3a03c/library/alloc/src/slice.rs",
-    "/rustc/750bd1a7ff3e010611b97ee75d30b7cbf5f3a03c/library/alloc/src/alloc.rs",
-    "/rustc/750bd1a7ff3e010611b97ee75d30b7cbf5f3a03c/library/core/src/ptr/non_null.rs",
-    "/rustc/750bd1a7ff3e010611b97ee75d30b7cbf5f3a03c/library/core/src/slice/iter.rs",
-    "/rustc/750bd1a7ff3e010611b97ee75d30b7cbf5f3a03c/library/core/src/ptr/const_ptr.rs",
-    "/rustc/750bd1a7ff3e010611b97ee75d30b7cbf5f3a03c/library/core/src/intrinsics.rs"
+    "/rustc/98ad6a5519651af36e246c0335c964dd52c554ba/library/core/src/fmt/mod.rs",
+    "/rustc/98ad6a5519651af36e246c0335c964dd52c554ba/library/core/src/slice/mod.rs",
+    "/rustc/98ad6a5519651af36e246c0335c964dd52c554ba/library/core/src/slice/iter/macros.rs",
+    "/rustc/98ad6a5519651af36e246c0335c964dd52c554ba/library/alloc/src/vec/mod.rs",
+    "/rustc/98ad6a5519651af36e246c0335c964dd52c554ba/library/std/src/io/stdio.rs",
+    "/rustc/98ad6a5519651af36e246c0335c964dd52c554ba/library/alloc/src/boxed.rs",
+    "/rustc/98ad6a5519651af36e246c0335c964dd52c554ba/library/core/src/ptr/mut_ptr.rs",
+    "/rustc/98ad6a5519651af36e246c0335c964dd52c554ba/library/core/src/ptr/mod.rs",
+    "/rustc/98ad6a5519651af36e246c0335c964dd52c554ba/library/alloc/src/slice.rs",
+    "/rustc/98ad6a5519651af36e246c0335c964dd52c554ba/library/alloc/src/alloc.rs",
+    "/rustc/98ad6a5519651af36e246c0335c964dd52c554ba/library/core/src/ptr/non_null.rs",
+    "/rustc/98ad6a5519651af36e246c0335c964dd52c554ba/library/core/src/slice/iter.rs",
+    "/rustc/98ad6a5519651af36e246c0335c964dd52c554ba/library/core/src/ptr/const_ptr.rs",
+    "/rustc/98ad6a5519651af36e246c0335c964dd52c554ba/library/core/src/intrinsics.rs"
   ],
   "callables": [
     {

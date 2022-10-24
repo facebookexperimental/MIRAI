@@ -2488,9 +2488,85 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         match literal {
             // This constant came from the type system
             mir::ConstantKind::Ty(c) => self.visit_const(c),
+            // An unevaluated mir constant which is not part of the type system.
+            mir::ConstantKind::Unevaluated(c, ty) => self.visit_unevaluated_const(c, *ty),
             // This constant contains something the type system cannot handle (e.g. pointers).
             mir::ConstantKind::Val(v, ty) => self.visit_const_value(*v, *ty),
         }
+    }
+
+    /// Synthesizes a MIRAI constant value from an unevaluated mir constant which is not part of the type system.
+    #[logfn_inputs(TRACE)]
+    pub fn visit_unevaluated_const(
+        &mut self,
+        unevaluated: &rustc_middle::ty::Unevaluated<'tcx, Option<mir::Promoted>>,
+        lty: Ty<'tcx>,
+    ) -> Rc<AbstractValue> {
+        let def_ty = unevaluated.def;
+        let mut def_id = def_ty.def_id_for_type_of();
+        let substs = self.type_visitor().specialize_substs(
+            unevaluated.substs,
+            &self.type_visitor().generic_argument_map,
+        );
+        self.bv.cv.substs_cache.insert(def_id, substs);
+        let path = match unevaluated.promoted {
+            Some(promoted) => {
+                let index = promoted.index();
+                Rc::new(PathEnum::PromotedConstant { ordinal: index }.into())
+            }
+            None => {
+                if !substs.is_empty() {
+                    let param_env = rustc_middle::ty::ParamEnv::reveal_all();
+                    trace!("devirtualize resolving def_id {:?}: {:?}", def_id, def_ty);
+                    trace!("substs {:?}", substs);
+                    if let Ok(Some(instance)) =
+                        rustc_middle::ty::Instance::resolve(self.bv.tcx, param_env, def_id, substs)
+                    {
+                        def_id = instance.def.def_id();
+                        trace!("resolved it to {:?}", def_id);
+                    }
+                }
+                if self.bv.tcx.is_mir_available(def_id) {
+                    self.bv.import_static(Path::new_static(self.bv.tcx, def_id))
+                } else if self.bv.cv.known_names_cache.get(self.bv.tcx, def_id)
+                    == KnownNames::AllocRawVecMinNonZeroCap
+                {
+                    if let Ok(ty_and_layout) = self.type_visitor().layout_of(substs.type_at(0)) {
+                        if !ty_and_layout.is_unsized() {
+                            let size_of_t = ty_and_layout.layout.size().bytes();
+                            let min_non_zero_cap: u128 = if size_of_t == 1 {
+                                8
+                            } else if size_of_t <= 1024 {
+                                4
+                            } else {
+                                1
+                            };
+                            return Rc::new((min_non_zero_cap).into());
+                        }
+                    }
+                    Path::new_static(self.bv.tcx, def_id)
+                } else {
+                    let cache_key = utils::summary_key_str(self.bv.tcx, def_id);
+                    let summary = self
+                        .bv
+                        .cv
+                        .summary_cache
+                        .get_persistent_summary_for(&cache_key);
+                    if summary.is_computed {
+                        let path = self.bv.import_static(Path::new_static(self.bv.tcx, def_id));
+                        self.type_visitor_mut()
+                            .set_path_rustc_type(path.clone(), lty);
+                        return self.bv.lookup_path_and_refine_result(path, lty);
+                    } else {
+                        Path::new_static(self.bv.tcx, def_id)
+                    }
+                }
+            }
+        };
+
+        self.type_visitor_mut()
+            .set_path_rustc_type(path.clone(), lty);
+        self.bv.lookup_path_and_refine_result(path, lty)
     }
 
     /// Synthesizes a MIRAI constant value from a RustC constant as used in the type system
@@ -2509,63 +2585,55 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     &self.type_visitor().generic_argument_map,
                 );
                 self.bv.cv.substs_cache.insert(def_id, substs);
-                let path = match unevaluated.promoted {
-                    Some(promoted) => {
-                        let index = promoted.index();
-                        Rc::new(PathEnum::PromotedConstant { ordinal: index }.into())
+                let path = {
+                    if !substs.is_empty() {
+                        let param_env = rustc_middle::ty::ParamEnv::reveal_all();
+                        trace!("devirtualize resolving def_id {:?}: {:?}", def_id, def_ty);
+                        trace!("substs {:?}", substs);
+                        if let Ok(Some(instance)) = rustc_middle::ty::Instance::resolve(
+                            self.bv.tcx,
+                            param_env,
+                            def_id,
+                            substs,
+                        ) {
+                            def_id = instance.def.def_id();
+                            trace!("resolved it to {:?}", def_id);
+                        }
                     }
-                    None => {
-                        if !substs.is_empty() {
-                            let param_env = rustc_middle::ty::ParamEnv::reveal_all();
-                            trace!("devirtualize resolving def_id {:?}: {:?}", def_id, def_ty);
-                            trace!("substs {:?}", substs);
-                            if let Ok(Some(instance)) = rustc_middle::ty::Instance::resolve(
-                                self.bv.tcx,
-                                param_env,
-                                def_id,
-                                substs,
-                            ) {
-                                def_id = instance.def.def_id();
-                                trace!("resolved it to {:?}", def_id);
+                    if self.bv.tcx.is_mir_available(def_id) {
+                        self.bv.import_static(Path::new_static(self.bv.tcx, def_id))
+                    } else if self.bv.cv.known_names_cache.get(self.bv.tcx, def_id)
+                        == KnownNames::AllocRawVecMinNonZeroCap
+                    {
+                        if let Ok(ty_and_layout) = self.type_visitor().layout_of(substs.type_at(0))
+                        {
+                            if !ty_and_layout.is_unsized() {
+                                let size_of_t = ty_and_layout.layout.size().bytes();
+                                let min_non_zero_cap: u128 = if size_of_t == 1 {
+                                    8
+                                } else if size_of_t <= 1024 {
+                                    4
+                                } else {
+                                    1
+                                };
+                                return Rc::new((min_non_zero_cap).into());
                             }
                         }
-                        if self.bv.tcx.is_mir_available(def_id) {
-                            self.bv.import_static(Path::new_static(self.bv.tcx, def_id))
-                        } else if self.bv.cv.known_names_cache.get(self.bv.tcx, def_id)
-                            == KnownNames::AllocRawVecMinNonZeroCap
-                        {
-                            if let Ok(ty_and_layout) =
-                                self.type_visitor().layout_of(substs.type_at(0))
-                            {
-                                if !ty_and_layout.is_unsized() {
-                                    let size_of_t = ty_and_layout.layout.size().bytes();
-                                    let min_non_zero_cap: u128 = if size_of_t == 1 {
-                                        8
-                                    } else if size_of_t <= 1024 {
-                                        4
-                                    } else {
-                                        1
-                                    };
-                                    return Rc::new((min_non_zero_cap).into());
-                                }
-                            }
-                            Path::new_static(self.bv.tcx, def_id)
+                        Path::new_static(self.bv.tcx, def_id)
+                    } else {
+                        let cache_key = utils::summary_key_str(self.bv.tcx, def_id);
+                        let summary = self
+                            .bv
+                            .cv
+                            .summary_cache
+                            .get_persistent_summary_for(&cache_key);
+                        if summary.is_computed {
+                            let path = self.bv.import_static(Path::new_static(self.bv.tcx, def_id));
+                            self.type_visitor_mut()
+                                .set_path_rustc_type(path.clone(), lty);
+                            return self.bv.lookup_path_and_refine_result(path, lty);
                         } else {
-                            let cache_key = utils::summary_key_str(self.bv.tcx, def_id);
-                            let summary = self
-                                .bv
-                                .cv
-                                .summary_cache
-                                .get_persistent_summary_for(&cache_key);
-                            if summary.is_computed {
-                                let path =
-                                    self.bv.import_static(Path::new_static(self.bv.tcx, def_id));
-                                self.type_visitor_mut()
-                                    .set_path_rustc_type(path.clone(), lty);
-                                return self.bv.lookup_path_and_refine_result(path, lty);
-                            } else {
-                                Path::new_static(self.bv.tcx, def_id)
-                            }
+                            Path::new_static(self.bv.tcx, def_id)
                         }
                     }
                 };

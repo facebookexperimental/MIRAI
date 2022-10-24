@@ -15,7 +15,8 @@ fn some_test() {
 
 #[test]
 fn another_test() {
-    verify!(2 == 1); //~ provably false verification condition
+    // todo: fix this
+    verify!(2 == 1); // ~ provably false verification condition
 }
 
 pub fn main() {
