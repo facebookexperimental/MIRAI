@@ -23,7 +23,7 @@ use rustc_errors::{Diagnostic, DiagnosticBuilder};
 use rustc_hir::def_id::{DefId, DefIndex};
 use rustc_middle::mir;
 use rustc_middle::ty::subst::SubstsRef;
-use rustc_middle::ty::{TyCtxt, Unevaluated};
+use rustc_middle::ty::{TyCtxt, UnevaluatedConst};
 use rustc_session::Session;
 
 use crate::body_visitor::BodyVisitor;
@@ -225,14 +225,14 @@ impl<'compilation, 'tcx> CrateVisitor<'compilation, 'tcx> {
             for b in body.basic_blocks.iter() {
                 for s in &b.statements {
                     // The statement we are looking for has the form
-                    // `Assign(_, Rvalue(Constant(Unevaluated(def_id)))))`
+                    // `Assign(_, Rvalue(Constant(UnevaluatedConst(def_id)))))`
                     if let mir::StatementKind::Assign(box (
                         _,
                         mir::Rvalue::Use(mir::Operand::Constant(box ref con)),
                     )) = s.kind
                     {
                         if let mir::ConstantKind::Ty(c) = con.literal {
-                            if let rustc_middle::ty::ConstKind::Unevaluated(Unevaluated {
+                            if let rustc_middle::ty::ConstKind::Unevaluated(UnevaluatedConst {
                                 def: def_ty,
                                 ..
                             }) = c.kind()

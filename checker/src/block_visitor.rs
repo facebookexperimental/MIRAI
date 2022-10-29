@@ -2498,7 +2498,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
     #[logfn_inputs(TRACE)]
     pub fn visit_unevaluated_const(
         &mut self,
-        unevaluated: &rustc_middle::ty::Unevaluated<'tcx, Option<mir::Promoted>>,
+        unevaluated: &rustc_middle::mir::UnevaluatedConst<'tcx>,
         lty: Ty<'tcx>,
     ) -> Rc<AbstractValue> {
         let def_ty = unevaluated.def;
