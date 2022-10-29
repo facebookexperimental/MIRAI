@@ -523,7 +523,7 @@ impl<'tcx> TypeVisitor<'tcx> {
                                 }
                             }
                             TyKind::Tuple(types) => {
-                                if let Some(ty) = types.get(*ordinal as usize) {
+                                if let Some(ty) = types.get(*ordinal) {
                                     return *ty;
                                 }
                                 if types.is_empty() {

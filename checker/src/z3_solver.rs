@@ -1998,13 +1998,13 @@ impl Z3Solver {
             },
             ConstantDomain::F32(v) => unsafe {
                 let sort = z3_sys::Z3_mk_bv_sort(self.z3_context, num_bits);
-                let num_str = format!("{}", (*v as u32));
+                let num_str = format!("{}", *v);
                 let c_string = CString::new(num_str).unwrap();
                 z3_sys::Z3_mk_numeral(self.z3_context, c_string.into_raw(), sort)
             },
             ConstantDomain::F64(v) => unsafe {
                 let sort = z3_sys::Z3_mk_bv_sort(self.z3_context, num_bits);
-                let num_str = format!("{}", (*v as u64));
+                let num_str = format!("{}", *v);
                 let c_string = CString::new(num_str).unwrap();
                 z3_sys::Z3_mk_numeral(self.z3_context, c_string.into_raw(), sort)
             },

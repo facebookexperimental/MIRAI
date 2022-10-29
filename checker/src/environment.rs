@@ -29,9 +29,9 @@ pub struct Environment {
 }
 
 /// Default
-impl Environment {
+impl Default for Environment {
     #[logfn_inputs(TRACE)]
-    pub fn default() -> Environment {
+    fn default() -> Environment {
         Environment {
             entry_condition: Rc::new(abstract_value::TRUE),
             exit_conditions: HashTrieMap::default(),
