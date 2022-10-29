@@ -908,6 +908,7 @@ impl<'tcx> TypeVisitor<'tcx> {
                         }
                     }
                 }
+                mir::ProjectionElem::OpaqueCast(ty) => *ty,
                 mir::ProjectionElem::Downcast(_, ordinal) => {
                     if let TyKind::Adt(def, substs) = base_ty.kind() {
                         if ordinal.index() >= def.variants().len() {

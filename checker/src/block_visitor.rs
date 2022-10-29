@@ -10,7 +10,6 @@ use std::fmt::{Debug, Formatter, Result};
 use std::rc::Rc;
 
 use log_derive::*;
-
 use mirai_annotations::*;
 use rustc_hir::def_id::DefId;
 use rustc_index::vec::Idx;
@@ -3862,6 +3861,9 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         &[*elem],
                     );
                 }
+                mir::ProjectionElem::OpaqueCast(_) => {
+                    continue;
+                }
                 mir::ProjectionElem::Subslice { .. } => {}
             }
             result = Path::new_qualified(result, Rc::new(selector));
@@ -3927,6 +3929,10 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     Some(name) => Rc::from(name.as_str().deref()),
                 };
                 PathSelector::Downcast(name_str, index.as_usize())
+            }
+            mir::ProjectionElem::OpaqueCast(_) => {
+                // Dummy selector that will be ignored by caller.
+                PathSelector::Deref
             }
         }
     }
