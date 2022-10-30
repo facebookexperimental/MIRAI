@@ -272,7 +272,7 @@ impl<'compilation, 'tcx> CrateVisitor<'compilation, 'tcx> {
             }
             if !expected_errors.check_messages(diags) {
                 self.session
-                    .fatal(&format!("test failed: {}", self.file_name));
+                    .fatal(format!("test failed: {}", self.file_name));
             }
         } else {
             let mut diagnostics: Vec<&mut DiagnosticBuilder<'_, ()>> =

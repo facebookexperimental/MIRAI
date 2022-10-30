@@ -121,20 +121,20 @@ commit;*/
 /* EXPECTED:CALL_SITES{
   "files": [
     "tests/call_graph/type_relations.rs",
-    "/rustc/bf15a9e5263fcea065a7ae9c179b2d24c2deb670/library/core/src/fmt/mod.rs",
-    "/rustc/bf15a9e5263fcea065a7ae9c179b2d24c2deb670/library/core/src/slice/mod.rs",
-    "/rustc/bf15a9e5263fcea065a7ae9c179b2d24c2deb670/library/core/src/slice/iter/macros.rs",
-    "/rustc/bf15a9e5263fcea065a7ae9c179b2d24c2deb670/library/alloc/src/vec/mod.rs",
-    "/rustc/bf15a9e5263fcea065a7ae9c179b2d24c2deb670/library/std/src/io/stdio.rs",
-    "/rustc/bf15a9e5263fcea065a7ae9c179b2d24c2deb670/library/alloc/src/boxed.rs",
-    "/rustc/bf15a9e5263fcea065a7ae9c179b2d24c2deb670/library/core/src/ptr/mut_ptr.rs",
-    "/rustc/bf15a9e5263fcea065a7ae9c179b2d24c2deb670/library/core/src/ptr/mod.rs",
-    "/rustc/bf15a9e5263fcea065a7ae9c179b2d24c2deb670/library/alloc/src/slice.rs",
-    "/rustc/bf15a9e5263fcea065a7ae9c179b2d24c2deb670/library/alloc/src/alloc.rs",
-    "/rustc/bf15a9e5263fcea065a7ae9c179b2d24c2deb670/library/core/src/ptr/non_null.rs",
-    "/rustc/bf15a9e5263fcea065a7ae9c179b2d24c2deb670/library/core/src/slice/iter.rs",
-    "/rustc/bf15a9e5263fcea065a7ae9c179b2d24c2deb670/library/core/src/ptr/const_ptr.rs",
-    "/rustc/bf15a9e5263fcea065a7ae9c179b2d24c2deb670/library/core/src/intrinsics.rs"
+    "/rustc/9565dfeb4e6225177bbe78f18cd48a7982f34401/library/core/src/fmt/mod.rs",
+    "/rustc/9565dfeb4e6225177bbe78f18cd48a7982f34401/library/core/src/slice/mod.rs",
+    "/rustc/9565dfeb4e6225177bbe78f18cd48a7982f34401/library/core/src/slice/iter/macros.rs",
+    "/rustc/9565dfeb4e6225177bbe78f18cd48a7982f34401/library/alloc/src/vec/mod.rs",
+    "/rustc/9565dfeb4e6225177bbe78f18cd48a7982f34401/library/std/src/io/stdio.rs",
+    "/rustc/9565dfeb4e6225177bbe78f18cd48a7982f34401/library/alloc/src/boxed.rs",
+    "/rustc/9565dfeb4e6225177bbe78f18cd48a7982f34401/library/core/src/ptr/mut_ptr.rs",
+    "/rustc/9565dfeb4e6225177bbe78f18cd48a7982f34401/library/core/src/ptr/mod.rs",
+    "/rustc/9565dfeb4e6225177bbe78f18cd48a7982f34401/library/alloc/src/slice.rs",
+    "/rustc/9565dfeb4e6225177bbe78f18cd48a7982f34401/library/alloc/src/alloc.rs",
+    "/rustc/9565dfeb4e6225177bbe78f18cd48a7982f34401/library/core/src/ptr/non_null.rs",
+    "/rustc/9565dfeb4e6225177bbe78f18cd48a7982f34401/library/core/src/slice/iter.rs",
+    "/rustc/9565dfeb4e6225177bbe78f18cd48a7982f34401/library/core/src/ptr/const_ptr.rs",
+    "/rustc/9565dfeb4e6225177bbe78f18cd48a7982f34401/library/core/src/intrinsics.rs"
   ],
   "callables": [
     {
@@ -176,7 +176,7 @@ commit;*/
     {
       "name": "core.slice.implement_slice_generic_par_T.iter",
       "file_index": 2,
-      "first_line": 738,
+      "first_line": 734,
       "local": true
     },
     {
@@ -194,7 +194,7 @@ commit;*/
     {
       "name": "alloc.vec.implement_alloc_vec_Vec_generic_par_T_generic_par_A.drop",
       "file_index": 4,
-      "first_line": 3026,
+      "first_line": 3024,
       "local": true
     },
     {
@@ -206,13 +206,13 @@ commit;*/
     {
       "name": "alloc.vec.implement_alloc_vec_Vec_generic_par_T_generic_par_A.deref",
       "file_index": 4,
-      "first_line": 2642,
+      "first_line": 2640,
       "local": true
     },
     {
       "name": "std.io.stdio._print",
       "file_index": 5,
-      "first_line": 1045,
+      "first_line": 1074,
       "local": false
     },
     {
@@ -254,7 +254,7 @@ commit;*/
     {
       "name": "core.ptr.drop_in_place",
       "file_index": 8,
-      "first_line": 491,
+      "first_line": 490,
       "local": true
     },
     {
@@ -278,7 +278,7 @@ commit;*/
     {
       "name": "core.ptr.non_null.implement_core_ptr_non_null_NonNull_generic_par_T.new",
       "file_index": 11,
-      "first_line": 218,
+      "first_line": 222,
       "local": true
     },
     {
@@ -308,7 +308,7 @@ commit;*/
     {
       "name": "core.ptr.mut_ptr.implement_pointer_mut_generic_par_T.guaranteed_eq",
       "file_index": 7,
-      "first_line": 720,
+      "first_line": 724,
       "local": true
     },
     {
@@ -516,21 +516,21 @@ commit;*/
     ],
     [
       4,
-      2643,
+      2641,
       40,
       11,
       18
     ],
     [
       4,
-      3031,
+      3029,
       62,
       9,
       18
     ],
     [
       4,
-      3031,
+      3029,
       13,
       9,
       19
@@ -558,7 +558,7 @@ commit;*/
     ],
     [
       2,
-      739,
+      735,
       9,
       6,
       24
@@ -614,7 +614,7 @@ commit;*/
     ],
     [
       11,
-      219,
+      223,
       13,
       23,
       18
@@ -628,7 +628,7 @@ commit;*/
     ],
     [
       7,
-      724,
+      728,
       9,
       28,
       29
