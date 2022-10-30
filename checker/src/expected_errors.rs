@@ -12,7 +12,7 @@ use std::str::FromStr;
 use log_derive::logfn_inputs;
 
 use mirai_annotations::assume;
-use rustc_errors::{Diagnostic, MultiSpan};
+use rustc_errors::{Diagnostic, DiagnosticMessage, MultiSpan};
 
 /// A collection of error strings that are expected for a test case.
 #[derive(Debug)]
@@ -35,11 +35,11 @@ impl ExpectedErrors {
     #[logfn_inputs(TRACE)]
     pub fn check_messages(&mut self, diagnostics: Vec<Diagnostic>) -> bool {
         for diag in diagnostics.iter() {
-            if !self.remove_message(&diag.span, diag.styled_message()[0].0.expect_str()) {
+            if !self.remove_message(&diag.span, Self::expect_str(&diag.styled_message()[0].0)) {
                 return false;
             }
             for child in &diag.children {
-                if !self.remove_message(&child.span, child.message[0].0.expect_str()) {
+                if !self.remove_message(&child.span, Self::expect_str(&child.message[0].0)) {
                     return false;
                 }
             }
@@ -49,6 +49,13 @@ impl ExpectedErrors {
             return false;
         }
         true
+    }
+
+    fn expect_str(diag: &DiagnosticMessage) -> &str {
+        match diag {
+            DiagnosticMessage::Str(s) => s,
+            _ => panic!("expected non-translatable diagnostic message"),
+        }
     }
 
     /// Removes the first element of self.messages and checks if it matches msg.

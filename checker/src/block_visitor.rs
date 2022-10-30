@@ -2148,7 +2148,12 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     .copy_or_move_elements(path, source_path, ty, is_move);
             }
             // Remaining unclassified casts.
-            mir::CastKind::Misc => {
+            mir::CastKind::IntToInt
+            | mir::CastKind::FloatToFloat
+            | mir::CastKind::FloatToInt
+            | mir::CastKind::IntToFloat
+            | mir::CastKind::FnPtrToPtr
+            | mir::CastKind::PtrToPtr => {
                 let source_type = self.get_operand_rustc_type(operand);
                 let mut source_value = self.visit_operand(operand);
                 if source_type.is_enum() {

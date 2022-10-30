@@ -64,8 +64,8 @@ commit;
 /* EXPECTED:CALL_SITES{
   "files": [
     "tests/call_graph/static_fold.rs",
-    "/rustc/8b0c05d9ad7121cdb97600f261bcd5f04c8db20d/library/std/src/io/stdio.rs",
-    "/rustc/8b0c05d9ad7121cdb97600f261bcd5f04c8db20d/library/core/src/fmt/mod.rs"
+    "/rustc/bf15a9e5263fcea065a7ae9c179b2d24c2deb670/library/std/src/io/stdio.rs",
+    "/rustc/bf15a9e5263fcea065a7ae9c179b2d24c2deb670/library/core/src/fmt/mod.rs"
   ],
   "callables": [
     {
@@ -95,7 +95,7 @@ commit;
     {
       "name": "std.io.stdio._print",
       "file_index": 1,
-      "first_line": 1029,
+      "first_line": 1045,
       "local": false
     },
     {
