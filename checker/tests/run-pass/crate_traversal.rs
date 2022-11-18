@@ -6,7 +6,6 @@
 
 // statements and expressions that exercise all visitor code paths
 
-#![allow(const_err)]
 #![allow(unused)]
 #![feature(generators)]
 

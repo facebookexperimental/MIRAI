@@ -8,7 +8,6 @@
 
 // MIRAI_FLAGS --diag=paranoid -- -Z mir-opt-level=0
 
-#[allow(const_err)]
 #[allow(unconditional_panic)]
 pub fn main() {
     let x = [1, 2];

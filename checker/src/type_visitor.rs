@@ -18,7 +18,7 @@ use rustc_middle::mir;
 use rustc_middle::ty::subst::{GenericArg, GenericArgKind, InternalSubsts, SubstsRef};
 use rustc_middle::ty::{
     AdtDef, Const, ConstKind, ExistentialPredicate, ExistentialProjection, ExistentialTraitRef,
-    FnSig, ParamTy, Term, Ty, TyCtxt, TyKind, TypeAndMut,
+    FnSig, ParamTy, Ty, TyCtxt, TyKind, TypeAndMut,
 };
 use rustc_target::abi::VariantIdx;
 
@@ -523,7 +523,7 @@ impl<'tcx> TypeVisitor<'tcx> {
                                 }
                             }
                             TyKind::Tuple(types) => {
-                                if let Some(ty) = types.get(*ordinal as usize) {
+                                if let Some(ty) = types.get(*ordinal) {
                                     return *ty;
                                 }
                                 if types.is_empty() {
@@ -908,6 +908,7 @@ impl<'tcx> TypeVisitor<'tcx> {
                         }
                     }
                 }
+                mir::ProjectionElem::OpaqueCast(ty) => *ty,
                 mir::ProjectionElem::Downcast(_, ordinal) => {
                     if let TyKind::Adt(def, substs) = base_ty.kind() {
                         if ordinal.index() >= def.variants().len() {
@@ -1137,7 +1138,7 @@ impl<'tcx> TypeVisitor<'tcx> {
                 let specialized_fn_sig = fn_sig.map_bound(map_fn_sig);
                 self.tcx.mk_fn_ptr(specialized_fn_sig)
             }
-            TyKind::Dynamic(predicates, region) => {
+            TyKind::Dynamic(predicates, region, kind) => {
                 let specialized_predicates = predicates.iter().map(
                     |bound_pred: rustc_middle::ty::Binder<'_, ExistentialPredicate<'tcx>>| {
                         bound_pred.map_bound(|pred| match pred {
@@ -1152,13 +1153,11 @@ impl<'tcx> TypeVisitor<'tcx> {
                                 substs,
                                 term,
                             }) => {
-                                if let Term::Ty(ty) = term {
+                                if let Some(ty) = term.ty() {
                                     ExistentialPredicate::Projection(ExistentialProjection {
                                         item_def_id,
                                         substs: self.specialize_substs(substs, map),
-                                        term: Term::Ty(
-                                            self.specialize_generic_argument_type(ty, map),
-                                        ),
+                                        term: self.specialize_generic_argument_type(ty, map).into(),
                                     })
                                 } else {
                                     ExistentialPredicate::Projection(ExistentialProjection {
@@ -1176,6 +1175,7 @@ impl<'tcx> TypeVisitor<'tcx> {
                     self.tcx
                         .mk_poly_existential_predicates(specialized_predicates),
                     *region,
+                    *kind,
                 )
             }
             TyKind::Closure(def_id, substs) => {

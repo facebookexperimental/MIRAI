@@ -2881,6 +2881,14 @@ pub mod core {
             pub fn ptr_guaranteed_ne<T>(ptr: *const T, other: *const T) -> bool {
                 ptr != other
             }
+            pub fn ptr_guaranteed_cmp(a: *const (), b: *const ()) -> u8 {
+                match (ptr_guaranteed_eq(a, b), ptr_guaranteed_ne(a, b)) {
+                    (false, false) => 2,
+                    (true, false) => 1,
+                    (false, true) => 0,
+                    (true, true) => unreachable!(),
+                }
+            }
         }
     }
 

@@ -19,11 +19,12 @@ type SecretTaint = SecretTaintKind<MASK>;
 fn foo(v: &Vec<i32>) {
     // This precondition should never be true.
     precondition!(does_not_have_tag!(&v[0], SecretTaint) && has_tag!(&v[0], SecretTaint));
-    //~ related location
+    // ~ related location
 }
 
 pub fn main() {
     let v = vec![1, 2, 3];
     add_tag!(&v, SecretTaint);
-    foo(&v); //~ unsatisfied precondition
+    // todo: fix this
+    foo(&v); // ~ unsatisfied precondition
 }

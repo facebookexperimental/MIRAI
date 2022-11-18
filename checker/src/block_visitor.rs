@@ -10,7 +10,6 @@ use std::fmt::{Debug, Formatter, Result};
 use std::rc::Rc;
 
 use log_derive::*;
-
 use mirai_annotations::*;
 use rustc_hir::def_id::DefId;
 use rustc_index::vec::Idx;
@@ -130,8 +129,8 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             mir::StatementKind::Retag(retag_kind, place) => self.visit_retag(*retag_kind, place),
             mir::StatementKind::AscribeUserType(..) => assume_unreachable!(),
             mir::StatementKind::Coverage(..) => (),
-            mir::StatementKind::CopyNonOverlapping(box ref copy_info) => {
-                self.visit_copy_non_overlapping(copy_info)
+            mir::StatementKind::Intrinsic(box non_diverging_intrinsic) => {
+                self.visit_non_diverging_intrinsic(non_diverging_intrinsic);
             }
             mir::StatementKind::Nop => (),
         }
@@ -159,6 +158,22 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         self.type_visitor_mut()
             .set_path_rustc_type(path.clone(), pty);
         self.visit_rvalue(path, rvalue);
+    }
+
+    fn visit_non_diverging_intrinsic(
+        &mut self,
+        visit_non_diverging_intrinsic: &mir::NonDivergingIntrinsic<'tcx>,
+    ) {
+        match visit_non_diverging_intrinsic {
+            mir::NonDivergingIntrinsic::Assume(operand) => {
+                let source_val = self.visit_operand(operand);
+                self.bv.current_environment.entry_condition =
+                    self.bv.current_environment.entry_condition.and(source_val);
+            }
+            mir::NonDivergingIntrinsic::CopyNonOverlapping(copy_info) => {
+                self.visit_copy_non_overlapping(copy_info);
+            }
+        }
     }
 
     /// Denotes a call to the intrinsic function copy_nonoverlapping, where `src` and `dst` denotes the
@@ -2037,7 +2052,9 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             | mir::CastKind::PointerFromExposedAddress
             // All sorts of pointer-to-pointer casts. Note that reference-to-raw-ptr casts are
             // translated into `&raw mut/const *r`, i.e., they are not actually casts.
-            | mir::CastKind::Pointer(..) => {
+            | mir::CastKind::Pointer(..)
+            // Cast into a dyn* object.
+            | mir::CastKind::DynStar => {
                 // The value remains unchanged, but pointers may be fat, so use copy_or_move_elements
                 let (is_move, place) = match operand {
                     mir::Operand::Copy(place) => (false, place),
@@ -2131,7 +2148,12 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     .copy_or_move_elements(path, source_path, ty, is_move);
             }
             // Remaining unclassified casts.
-            mir::CastKind::Misc => {
+            mir::CastKind::IntToInt
+            | mir::CastKind::FloatToFloat
+            | mir::CastKind::FloatToInt
+            | mir::CastKind::IntToFloat
+            | mir::CastKind::FnPtrToPtr
+            | mir::CastKind::PtrToPtr => {
                 let source_type = self.get_operand_rustc_type(operand);
                 let mut source_value = self.visit_operand(operand);
                 if source_type.is_enum() {
@@ -2470,9 +2492,85 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         match literal {
             // This constant came from the type system
             mir::ConstantKind::Ty(c) => self.visit_const(c),
+            // An unevaluated mir constant which is not part of the type system.
+            mir::ConstantKind::Unevaluated(c, ty) => self.visit_unevaluated_const(c, *ty),
             // This constant contains something the type system cannot handle (e.g. pointers).
             mir::ConstantKind::Val(v, ty) => self.visit_const_value(*v, *ty),
         }
+    }
+
+    /// Synthesizes a MIRAI constant value from an unevaluated mir constant which is not part of the type system.
+    #[logfn_inputs(TRACE)]
+    pub fn visit_unevaluated_const(
+        &mut self,
+        unevaluated: &rustc_middle::mir::UnevaluatedConst<'tcx>,
+        lty: Ty<'tcx>,
+    ) -> Rc<AbstractValue> {
+        let def_ty = unevaluated.def;
+        let mut def_id = def_ty.def_id_for_type_of();
+        let substs = self.type_visitor().specialize_substs(
+            unevaluated.substs,
+            &self.type_visitor().generic_argument_map,
+        );
+        self.bv.cv.substs_cache.insert(def_id, substs);
+        let path = match unevaluated.promoted {
+            Some(promoted) => {
+                let index = promoted.index();
+                Rc::new(PathEnum::PromotedConstant { ordinal: index }.into())
+            }
+            None => {
+                if !substs.is_empty() {
+                    let param_env = rustc_middle::ty::ParamEnv::reveal_all();
+                    trace!("devirtualize resolving def_id {:?}: {:?}", def_id, def_ty);
+                    trace!("substs {:?}", substs);
+                    if let Ok(Some(instance)) =
+                        rustc_middle::ty::Instance::resolve(self.bv.tcx, param_env, def_id, substs)
+                    {
+                        def_id = instance.def.def_id();
+                        trace!("resolved it to {:?}", def_id);
+                    }
+                }
+                if self.bv.tcx.is_mir_available(def_id) {
+                    self.bv.import_static(Path::new_static(self.bv.tcx, def_id))
+                } else if self.bv.cv.known_names_cache.get(self.bv.tcx, def_id)
+                    == KnownNames::AllocRawVecMinNonZeroCap
+                {
+                    if let Ok(ty_and_layout) = self.type_visitor().layout_of(substs.type_at(0)) {
+                        if !ty_and_layout.is_unsized() {
+                            let size_of_t = ty_and_layout.layout.size().bytes();
+                            let min_non_zero_cap: u128 = if size_of_t == 1 {
+                                8
+                            } else if size_of_t <= 1024 {
+                                4
+                            } else {
+                                1
+                            };
+                            return Rc::new((min_non_zero_cap).into());
+                        }
+                    }
+                    Path::new_static(self.bv.tcx, def_id)
+                } else {
+                    let cache_key = utils::summary_key_str(self.bv.tcx, def_id);
+                    let summary = self
+                        .bv
+                        .cv
+                        .summary_cache
+                        .get_persistent_summary_for(&cache_key);
+                    if summary.is_computed {
+                        let path = self.bv.import_static(Path::new_static(self.bv.tcx, def_id));
+                        self.type_visitor_mut()
+                            .set_path_rustc_type(path.clone(), lty);
+                        return self.bv.lookup_path_and_refine_result(path, lty);
+                    } else {
+                        Path::new_static(self.bv.tcx, def_id)
+                    }
+                }
+            }
+        };
+
+        self.type_visitor_mut()
+            .set_path_rustc_type(path.clone(), lty);
+        self.bv.lookup_path_and_refine_result(path, lty)
     }
 
     /// Synthesizes a MIRAI constant value from a RustC constant as used in the type system
@@ -2491,63 +2589,55 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     &self.type_visitor().generic_argument_map,
                 );
                 self.bv.cv.substs_cache.insert(def_id, substs);
-                let path = match unevaluated.promoted {
-                    Some(promoted) => {
-                        let index = promoted.index();
-                        Rc::new(PathEnum::PromotedConstant { ordinal: index }.into())
+                let path = {
+                    if !substs.is_empty() {
+                        let param_env = rustc_middle::ty::ParamEnv::reveal_all();
+                        trace!("devirtualize resolving def_id {:?}: {:?}", def_id, def_ty);
+                        trace!("substs {:?}", substs);
+                        if let Ok(Some(instance)) = rustc_middle::ty::Instance::resolve(
+                            self.bv.tcx,
+                            param_env,
+                            def_id,
+                            substs,
+                        ) {
+                            def_id = instance.def.def_id();
+                            trace!("resolved it to {:?}", def_id);
+                        }
                     }
-                    None => {
-                        if !substs.is_empty() {
-                            let param_env = rustc_middle::ty::ParamEnv::reveal_all();
-                            trace!("devirtualize resolving def_id {:?}: {:?}", def_id, def_ty);
-                            trace!("substs {:?}", substs);
-                            if let Ok(Some(instance)) = rustc_middle::ty::Instance::resolve(
-                                self.bv.tcx,
-                                param_env,
-                                def_id,
-                                substs,
-                            ) {
-                                def_id = instance.def.def_id();
-                                trace!("resolved it to {:?}", def_id);
+                    if self.bv.tcx.is_mir_available(def_id) {
+                        self.bv.import_static(Path::new_static(self.bv.tcx, def_id))
+                    } else if self.bv.cv.known_names_cache.get(self.bv.tcx, def_id)
+                        == KnownNames::AllocRawVecMinNonZeroCap
+                    {
+                        if let Ok(ty_and_layout) = self.type_visitor().layout_of(substs.type_at(0))
+                        {
+                            if !ty_and_layout.is_unsized() {
+                                let size_of_t = ty_and_layout.layout.size().bytes();
+                                let min_non_zero_cap: u128 = if size_of_t == 1 {
+                                    8
+                                } else if size_of_t <= 1024 {
+                                    4
+                                } else {
+                                    1
+                                };
+                                return Rc::new((min_non_zero_cap).into());
                             }
                         }
-                        if self.bv.tcx.is_mir_available(def_id) {
-                            self.bv.import_static(Path::new_static(self.bv.tcx, def_id))
-                        } else if self.bv.cv.known_names_cache.get(self.bv.tcx, def_id)
-                            == KnownNames::AllocRawVecMinNonZeroCap
-                        {
-                            if let Ok(ty_and_layout) =
-                                self.type_visitor().layout_of(substs.type_at(0))
-                            {
-                                if !ty_and_layout.is_unsized() {
-                                    let size_of_t = ty_and_layout.layout.size().bytes();
-                                    let min_non_zero_cap: u128 = if size_of_t == 1 {
-                                        8
-                                    } else if size_of_t <= 1024 {
-                                        4
-                                    } else {
-                                        1
-                                    };
-                                    return Rc::new((min_non_zero_cap).into());
-                                }
-                            }
-                            Path::new_static(self.bv.tcx, def_id)
+                        Path::new_static(self.bv.tcx, def_id)
+                    } else {
+                        let cache_key = utils::summary_key_str(self.bv.tcx, def_id);
+                        let summary = self
+                            .bv
+                            .cv
+                            .summary_cache
+                            .get_persistent_summary_for(&cache_key);
+                        if summary.is_computed {
+                            let path = self.bv.import_static(Path::new_static(self.bv.tcx, def_id));
+                            self.type_visitor_mut()
+                                .set_path_rustc_type(path.clone(), lty);
+                            return self.bv.lookup_path_and_refine_result(path, lty);
                         } else {
-                            let cache_key = utils::summary_key_str(self.bv.tcx, def_id);
-                            let summary = self
-                                .bv
-                                .cv
-                                .summary_cache
-                                .get_persistent_summary_for(&cache_key);
-                            if summary.is_computed {
-                                let path =
-                                    self.bv.import_static(Path::new_static(self.bv.tcx, def_id));
-                                self.type_visitor_mut()
-                                    .set_path_rustc_type(path.clone(), lty);
-                                return self.bv.lookup_path_and_refine_result(path, lty);
-                            } else {
-                                Path::new_static(self.bv.tcx, def_id)
-                            }
+                            Path::new_static(self.bv.tcx, def_id)
                         }
                     }
                 };
@@ -3429,7 +3519,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         discr_has_data = false;
                     }
                     TagEncoding::Niche {
-                        dataful_variant,
+                        untagged_variant,
                         ref niche_variants,
                         niche_start,
                     } => {
@@ -3443,7 +3533,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         // For example, `Option<(usize, &T)>`  is represented such that
                         // `None` has a null pointer for the second tuple field, and
                         // `Some` is the identity function (with a non-null reference).
-                        trace!("dataful_variant {:?}", dataful_variant);
+                        trace!("untagged_variant {:?}", untagged_variant);
                         trace!("niche_start {:?}", niche_start);
                         let variants_start = niche_variants.start().as_u32();
                         let variants_end = niche_variants.end().as_u32();
@@ -3459,14 +3549,14 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         } else {
                             trace!("data {:?}", data);
                             discr_has_data = true;
-                            let fields = &variants[dataful_variant].fields();
+                            let fields = &variants[untagged_variant].fields();
                             checked_assume!(
                                 fields.count() == 1
                                     && fields.offset(0).bytes() == 0
                                     && fields.memory_index(0) == 0,
                                 "the data containing variant should contain a single sub-component"
                             );
-                            dataful_variant
+                            untagged_variant
                         };
                         discr_bits = discr_ty_layout.size.truncate(variant.as_u32() as u128);
                         discr_index = variant;
@@ -3776,6 +3866,9 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         &[*elem],
                     );
                 }
+                mir::ProjectionElem::OpaqueCast(_) => {
+                    continue;
+                }
                 mir::ProjectionElem::Subslice { .. } => {}
             }
             result = Path::new_qualified(result, Rc::new(selector));
@@ -3841,6 +3934,10 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     Some(name) => Rc::from(name.as_str().deref()),
                 };
                 PathSelector::Downcast(name_str, index.as_usize())
+            }
+            mir::ProjectionElem::OpaqueCast(_) => {
+                // Dummy selector that will be ignored by caller.
+                PathSelector::Deref
             }
         }
     }

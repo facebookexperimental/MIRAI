@@ -86,6 +86,8 @@ pub fn contains_function<'tcx>(ty: Ty<'tcx>, tcx: TyCtxt<'tcx>) -> bool {
 /// Returns true if the function identified by def_id is a public function.
 #[logfn(TRACE)]
 pub fn is_public(def_id: DefId, tcx: TyCtxt<'_>) -> bool {
+    use rustc_hir::def_id::LocalDefId;
+
     if tcx.hir().get_if_local(def_id).is_some() {
         let def_id = def_id.expect_local();
         match tcx.resolutions(()).visibilities.get(&def_id) {
@@ -105,7 +107,8 @@ pub fn is_public(def_id: DefId, tcx: TyCtxt<'_>) -> bool {
                     }) => ty::Visibility::Restricted(tcx.parent_module(hir_id).to_def_id())
                         .is_public(),
                     Node::ImplItem(..) => {
-                        match tcx.hir().get_by_def_id(tcx.hir().get_parent_item(hir_id)) {
+                        let parent_def_id: LocalDefId = tcx.hir().get_parent_item(hir_id).def_id;
+                        match tcx.hir().get_by_def_id(parent_def_id) {
                             Node::Item(rustc_hir::Item {
                                 kind:
                                     rustc_hir::ItemKind::Impl(rustc_hir::Impl {
