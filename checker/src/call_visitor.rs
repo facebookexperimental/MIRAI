@@ -2505,7 +2505,9 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                 }
                 return;
             }
-            self.block_visitor.bv.analysis_is_incomplete = true;
+            // Don't stop the analysis if we are building a call graph.
+            self.block_visitor.bv.analysis_is_incomplete =
+                self.block_visitor.bv.cv.options.call_graph_config.is_none();
             // If the callee is local, there will already be a diagnostic about the incomplete summary.
             if !self.callee_def_id.is_local()
                 && self.block_visitor.bv.cv.options.diag_level != DiagLevel::Default
@@ -2797,8 +2799,10 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                 .starts_with("incomplete analysis of call")
             {
                 // If the precondition is not satisfied, the summary of the callee is incomplete
-                // and so should be the summary of this method.
-                self.block_visitor.bv.analysis_is_incomplete = true;
+                // and so should be the summary of this method, but
+                // if we are building a call graph we don't want the analysis to stop.
+                self.block_visitor.bv.analysis_is_incomplete =
+                    self.block_visitor.bv.cv.options.call_graph_config.is_none();
                 if self.block_visitor.bv.cv.options.diag_level == DiagLevel::Default {
                     // Don't give a diagnostic in default mode, since it is hard for casual users
                     // to do something about missing/incomplete summaries.
