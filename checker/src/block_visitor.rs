@@ -950,7 +950,8 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     return;
                 }
             }
-            self.bv.analysis_is_incomplete = true;
+            // Don't stop the analysis if we are building a call graph.
+            self.bv.analysis_is_incomplete = self.bv.cv.options.call_graph_config.is_none();
             match self.bv.cv.options.diag_level {
                 DiagLevel::Default => {
                     // In this mode we suppress any diagnostics about issues that might not be true
@@ -1648,7 +1649,8 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             .session
             .struct_span_warn(span, "Inline assembly code cannot be analyzed by MIRAI.");
         self.bv.emit_diagnostic(warning);
-        self.bv.analysis_is_incomplete = true;
+        // Don't stop the analysis if we are building a call graph.
+        self.bv.analysis_is_incomplete = self.bv.cv.options.call_graph_config.is_none();
         if let Some(target) = target {
             // Propagate the entry condition to the successor block.
             self.bv
