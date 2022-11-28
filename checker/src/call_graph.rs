@@ -1429,11 +1429,11 @@ impl CallSiteOutput {
         }
     }
 
-    fn get_callable_index<'tcx>(
+    fn get_callable_index(
         callables: &mut Vec<Callable>,
         callable_index: &mut HashMap<DefId, usize>,
         callable: DefId,
-        call_graph: &CallGraph<'tcx>,
+        call_graph: &CallGraph,
         files: &mut Vec<String>,
         file_map: &mut HashMap<rustc_span::FileName, usize>,
     ) -> usize {

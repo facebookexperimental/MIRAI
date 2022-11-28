@@ -64,8 +64,8 @@ commit;
 /* EXPECTED:CALL_SITES{
   "files": [
     "tests/call_graph/static_fold.rs",
-    "/rustc/9565dfeb4e6225177bbe78f18cd48a7982f34401/library/std/src/io/stdio.rs",
-    "/rustc/9565dfeb4e6225177bbe78f18cd48a7982f34401/library/core/src/fmt/mod.rs"
+    "/rustc/70f8737b2f5d3bf7d6b784fad00b663b7ff9feda/library/std/src/io/stdio.rs",
+    "/rustc/70f8737b2f5d3bf7d6b784fad00b663b7ff9feda/library/core/src/fmt/mod.rs"
   ],
   "callables": [
     {

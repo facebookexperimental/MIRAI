@@ -121,20 +121,20 @@ commit;*/
 /* EXPECTED:CALL_SITES{
   "files": [
     "tests/call_graph/type_relations.rs",
-    "/rustc/9565dfeb4e6225177bbe78f18cd48a7982f34401/library/core/src/fmt/mod.rs",
-    "/rustc/9565dfeb4e6225177bbe78f18cd48a7982f34401/library/core/src/slice/mod.rs",
-    "/rustc/9565dfeb4e6225177bbe78f18cd48a7982f34401/library/core/src/slice/iter/macros.rs",
-    "/rustc/9565dfeb4e6225177bbe78f18cd48a7982f34401/library/alloc/src/vec/mod.rs",
-    "/rustc/9565dfeb4e6225177bbe78f18cd48a7982f34401/library/std/src/io/stdio.rs",
-    "/rustc/9565dfeb4e6225177bbe78f18cd48a7982f34401/library/alloc/src/boxed.rs",
-    "/rustc/9565dfeb4e6225177bbe78f18cd48a7982f34401/library/core/src/ptr/mut_ptr.rs",
-    "/rustc/9565dfeb4e6225177bbe78f18cd48a7982f34401/library/core/src/ptr/mod.rs",
-    "/rustc/9565dfeb4e6225177bbe78f18cd48a7982f34401/library/alloc/src/slice.rs",
-    "/rustc/9565dfeb4e6225177bbe78f18cd48a7982f34401/library/alloc/src/alloc.rs",
-    "/rustc/9565dfeb4e6225177bbe78f18cd48a7982f34401/library/core/src/ptr/non_null.rs",
-    "/rustc/9565dfeb4e6225177bbe78f18cd48a7982f34401/library/core/src/slice/iter.rs",
-    "/rustc/9565dfeb4e6225177bbe78f18cd48a7982f34401/library/core/src/ptr/const_ptr.rs",
-    "/rustc/9565dfeb4e6225177bbe78f18cd48a7982f34401/library/core/src/intrinsics.rs"
+    "/rustc/70f8737b2f5d3bf7d6b784fad00b663b7ff9feda/library/core/src/fmt/mod.rs",
+    "/rustc/70f8737b2f5d3bf7d6b784fad00b663b7ff9feda/library/core/src/slice/mod.rs",
+    "/rustc/70f8737b2f5d3bf7d6b784fad00b663b7ff9feda/library/core/src/slice/iter/macros.rs",
+    "/rustc/70f8737b2f5d3bf7d6b784fad00b663b7ff9feda/library/alloc/src/vec/mod.rs",
+    "/rustc/70f8737b2f5d3bf7d6b784fad00b663b7ff9feda/library/std/src/io/stdio.rs",
+    "/rustc/70f8737b2f5d3bf7d6b784fad00b663b7ff9feda/library/alloc/src/boxed.rs",
+    "/rustc/70f8737b2f5d3bf7d6b784fad00b663b7ff9feda/library/core/src/ptr/mut_ptr.rs",
+    "/rustc/70f8737b2f5d3bf7d6b784fad00b663b7ff9feda/library/core/src/ptr/mod.rs",
+    "/rustc/70f8737b2f5d3bf7d6b784fad00b663b7ff9feda/library/alloc/src/slice.rs",
+    "/rustc/70f8737b2f5d3bf7d6b784fad00b663b7ff9feda/library/alloc/src/alloc.rs",
+    "/rustc/70f8737b2f5d3bf7d6b784fad00b663b7ff9feda/library/core/src/ptr/non_null.rs",
+    "/rustc/70f8737b2f5d3bf7d6b784fad00b663b7ff9feda/library/core/src/slice/iter.rs",
+    "/rustc/70f8737b2f5d3bf7d6b784fad00b663b7ff9feda/library/core/src/ptr/const_ptr.rs",
+    "/rustc/70f8737b2f5d3bf7d6b784fad00b663b7ff9feda/library/core/src/intrinsics.rs"
   ],
   "callables": [
     {
@@ -146,7 +146,7 @@ commit;*/
     {
       "name": "core.fmt.implement_core_fmt_Formatter.debug_struct_field1_finish",
       "file_index": 1,
-      "first_line": 1984,
+      "first_line": 1983,
       "local": false
     },
     {
@@ -176,7 +176,7 @@ commit;*/
     {
       "name": "core.slice.implement_slice_generic_par_T.iter",
       "file_index": 2,
-      "first_line": 734,
+      "first_line": 735,
       "local": true
     },
     {
@@ -224,25 +224,25 @@ commit;*/
     {
       "name": "alloc.boxed.implement_alloc_boxed_Box_generic_par_T_generic_par_A.into_raw_with_allocator",
       "file_index": 6,
-      "first_line": 1110,
+      "first_line": 1112,
       "local": true
     },
     {
       "name": "alloc.boxed.implement_alloc_boxed_Box_generic_par_T_generic_par_A.into_unique",
       "file_index": 6,
-      "first_line": 1123,
+      "first_line": 1125,
       "local": true
     },
     {
       "name": "alloc.boxed.implement_alloc_boxed_Box_generic_par_T_generic_par_A.leak",
       "file_index": 6,
-      "first_line": 1183,
+      "first_line": 1185,
       "local": true
     },
     {
       "name": "alloc.boxed.implement_alloc_boxed_Box_generic_par_T_generic_par_A.drop",
       "file_index": 6,
-      "first_line": 1235,
+      "first_line": 1237,
       "local": true
     },
     {
@@ -266,13 +266,13 @@ commit;*/
     {
       "name": "alloc.alloc.exchange_malloc",
       "file_index": 10,
-      "first_line": 328,
+      "first_line": 324,
       "local": false
     },
     {
       "name": "alloc.alloc.implement_alloc_alloc_Global.alloc_impl",
       "file_index": 10,
-      "first_line": 176,
+      "first_line": 172,
       "local": true
     },
     {
@@ -308,19 +308,19 @@ commit;*/
     {
       "name": "core.ptr.mut_ptr.implement_pointer_mut_generic_par_T.guaranteed_eq",
       "file_index": 7,
-      "first_line": 724,
+      "first_line": 753,
       "local": true
     },
     {
       "name": "core.intrinsics.foreign.ptr_guaranteed_cmp",
       "file_index": 14,
-      "first_line": 2059,
+      "first_line": 2065,
       "local": false
     },
     {
       "name": "core.intrinsics.foreign.assert_inhabited",
       "file_index": 14,
-      "first_line": 947,
+      "first_line": 952,
       "local": false
     }
   ],
@@ -495,21 +495,21 @@ commit;*/
     ],
     [
       6,
-      1111,
+      1113,
       31,
       14,
       15
     ],
     [
       6,
-      1130,
+      1132,
       23,
       15,
       16
     ],
     [
       6,
-      1131,
+      1133,
       5,
       15,
       17
@@ -551,14 +551,14 @@ commit;*/
     ],
     [
       10,
-      182,
+      178,
       27,
       22,
       23
     ],
     [
       2,
-      735,
+      736,
       9,
       6,
       24
@@ -628,7 +628,7 @@ commit;*/
     ],
     [
       7,
-      728,
+      757,
       9,
       28,
       29
@@ -642,7 +642,7 @@ commit;*/
     ],
     [
       6,
-      1129,
+      1131,
       30,
       15,
       30
