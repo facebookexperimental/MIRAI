@@ -23,4 +23,7 @@ pub fn hex_encode(src: &[u8], dst: &mut [u8]) {
     }
 }
 
+// todo: fix this
+//~ The union is not fully initialized by this assignment
+
 pub fn main() {}

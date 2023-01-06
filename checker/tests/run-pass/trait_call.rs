@@ -47,8 +47,7 @@ pub fn t1() {
     let foo = Foo {
         bx: Box::new(bar) as Box<dyn Tr>,
     };
-    // todo: fix this
-    let bi = foo.bx.bar(); //~ the called function did not resolve to an implementation with a MIR body
+    let bi = foo.bx.bar();
     verify!(bi == 1);
 }
 
@@ -69,29 +68,27 @@ fn t3c(t: &dyn Tr) -> i32 {
     t.bar()
 }
 
-// todo: fix this
+pub fn t4() {
+    let bar = Bar { i: 1 };
+    let foo = Foo {
+        bx: Box::new(bar) as Box<dyn Tr>,
+    };
+    let bi = t4c(foo);
+    verify!(bi == 1);
+}
 
-// pub fn t4() {
-//     let bar = Bar { i: 1 };
-//     let foo = Foo {
-//         bx: Box::new(bar) as Box<dyn Tr>,
-//     };
-//     let bi = t4c(foo);
-//     verify!(bi == 1);
-// }
+pub fn t4a() {
+    let bar = BarTwo { i: 1 };
+    let foo = Foo {
+        bx: Box::new(bar) as Box<dyn Tr>,
+    };
+    let bi = t4c(foo);
+    verify!(bi == 2);
+}
 
-// pub fn t4a() {
-//     let bar = BarTwo { i: 1 };
-//     let foo = Foo {
-//         bx: Box::new(bar) as Box<dyn Tr>,
-//     };
-//     let bi = t4c(foo);
-//     verify!(bi == 2);
-// }
-
-// fn t4c(foo: Foo) -> i32 {
-//     foo.bx.bar()
-// }
+fn t4c(foo: Foo) -> i32 {
+    foo.bx.bar()
+}
 
 impl Clone for Box<dyn Tr> {
     fn clone(&self) -> Box<dyn Tr> {

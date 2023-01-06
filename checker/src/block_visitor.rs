@@ -281,11 +281,9 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         self.bv.current_span = source_info.span;
         match kind {
             mir::TerminatorKind::Goto { target } => self.visit_goto(*target),
-            mir::TerminatorKind::SwitchInt {
-                discr,
-                switch_ty,
-                targets,
-            } => self.visit_switch_int(discr, *switch_ty, targets),
+            mir::TerminatorKind::SwitchInt { discr, targets } => {
+                self.visit_switch_int(discr, discr.ty(self.bv.mir, self.bv.tcx), targets)
+            }
             mir::TerminatorKind::Resume => self.visit_resume(),
             mir::TerminatorKind::Abort => self.visit_abort(),
             mir::TerminatorKind::Return => self.visit_return(),
