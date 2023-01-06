@@ -3551,7 +3551,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         } else {
                             trace!("data {:?}", data);
                             discr_has_data = true;
-                            let fields = &variants[untagged_variant].fields();
+                            let fields = &variants[untagged_variant].fields;
                             checked_assume!(
                                 fields.count() == 1
                                     && fields.offset(0).bytes() == 0

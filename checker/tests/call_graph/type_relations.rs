@@ -121,20 +121,20 @@ commit;*/
 /* EXPECTED:CALL_SITES{
   "files": [
     "tests/call_graph/type_relations.rs",
-    "/rustc/70f8737b2f5d3bf7d6b784fad00b663b7ff9feda/library/core/src/fmt/mod.rs",
-    "/rustc/70f8737b2f5d3bf7d6b784fad00b663b7ff9feda/library/core/src/slice/mod.rs",
-    "/rustc/70f8737b2f5d3bf7d6b784fad00b663b7ff9feda/library/core/src/slice/iter/macros.rs",
-    "/rustc/70f8737b2f5d3bf7d6b784fad00b663b7ff9feda/library/alloc/src/vec/mod.rs",
-    "/rustc/70f8737b2f5d3bf7d6b784fad00b663b7ff9feda/library/std/src/io/stdio.rs",
-    "/rustc/70f8737b2f5d3bf7d6b784fad00b663b7ff9feda/library/alloc/src/boxed.rs",
-    "/rustc/70f8737b2f5d3bf7d6b784fad00b663b7ff9feda/library/core/src/ptr/mut_ptr.rs",
-    "/rustc/70f8737b2f5d3bf7d6b784fad00b663b7ff9feda/library/core/src/ptr/mod.rs",
-    "/rustc/70f8737b2f5d3bf7d6b784fad00b663b7ff9feda/library/alloc/src/slice.rs",
-    "/rustc/70f8737b2f5d3bf7d6b784fad00b663b7ff9feda/library/alloc/src/alloc.rs",
-    "/rustc/70f8737b2f5d3bf7d6b784fad00b663b7ff9feda/library/core/src/ptr/non_null.rs",
-    "/rustc/70f8737b2f5d3bf7d6b784fad00b663b7ff9feda/library/core/src/slice/iter.rs",
-    "/rustc/70f8737b2f5d3bf7d6b784fad00b663b7ff9feda/library/core/src/ptr/const_ptr.rs",
-    "/rustc/70f8737b2f5d3bf7d6b784fad00b663b7ff9feda/library/core/src/intrinsics.rs"
+    "/rustc/1eb62b1235fd77200e6bd967d70e83c0f2497233/library/core/src/fmt/mod.rs",
+    "/rustc/1eb62b1235fd77200e6bd967d70e83c0f2497233/library/core/src/slice/mod.rs",
+    "/rustc/1eb62b1235fd77200e6bd967d70e83c0f2497233/library/core/src/slice/iter/macros.rs",
+    "/rustc/1eb62b1235fd77200e6bd967d70e83c0f2497233/library/alloc/src/vec/mod.rs",
+    "/rustc/1eb62b1235fd77200e6bd967d70e83c0f2497233/library/std/src/io/stdio.rs",
+    "/rustc/1eb62b1235fd77200e6bd967d70e83c0f2497233/library/alloc/src/boxed.rs",
+    "/rustc/1eb62b1235fd77200e6bd967d70e83c0f2497233/library/core/src/ptr/mut_ptr.rs",
+    "/rustc/1eb62b1235fd77200e6bd967d70e83c0f2497233/library/core/src/ptr/mod.rs",
+    "/rustc/1eb62b1235fd77200e6bd967d70e83c0f2497233/library/alloc/src/slice.rs",
+    "/rustc/1eb62b1235fd77200e6bd967d70e83c0f2497233/library/alloc/src/alloc.rs",
+    "/rustc/1eb62b1235fd77200e6bd967d70e83c0f2497233/library/core/src/ptr/non_null.rs",
+    "/rustc/1eb62b1235fd77200e6bd967d70e83c0f2497233/library/core/src/slice/iter.rs",
+    "/rustc/1eb62b1235fd77200e6bd967d70e83c0f2497233/library/core/src/ptr/const_ptr.rs",
+    "/rustc/1eb62b1235fd77200e6bd967d70e83c0f2497233/library/core/src/intrinsics.rs"
   ],
   "callables": [
     {
@@ -194,7 +194,7 @@ commit;*/
     {
       "name": "alloc.vec.implement_alloc_vec_Vec_generic_par_T_generic_par_A.drop",
       "file_index": 4,
-      "first_line": 3024,
+      "first_line": 3048,
       "local": true
     },
     {
@@ -206,7 +206,7 @@ commit;*/
     {
       "name": "alloc.vec.implement_alloc_vec_Vec_generic_par_T_generic_par_A.deref",
       "file_index": 4,
-      "first_line": 2640,
+      "first_line": 2630,
       "local": true
     },
     {
@@ -516,21 +516,21 @@ commit;*/
     ],
     [
       4,
-      2641,
+      2631,
       40,
       11,
       18
     ],
     [
       4,
-      3029,
+      3053,
       62,
       9,
       18
     ],
     [
       4,
-      3029,
+      3053,
       13,
       9,
       19
