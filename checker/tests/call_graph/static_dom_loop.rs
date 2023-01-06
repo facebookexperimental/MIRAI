@@ -81,31 +81,31 @@ commit;
   ],
   "callables": [
     {
-      "name": "static_dom_loop.fn1",
+      "name": "/static_dom_loop/fn1(u32)->u32",
       "file_index": 0,
       "first_line": 9,
       "local": true
     },
     {
-      "name": "static_dom_loop.fn2",
+      "name": "/static_dom_loop/fn2(u32)->u32",
       "file_index": 0,
       "first_line": 13,
       "local": true
     },
     {
-      "name": "static_dom_loop.fn3",
+      "name": "/static_dom_loop/fn3(u32)->u32",
       "file_index": 0,
       "first_line": 16,
       "local": true
     },
     {
-      "name": "static_dom_loop.fn4",
+      "name": "/static_dom_loop/fn4(u32)->u32",
       "file_index": 0,
       "first_line": 19,
       "local": true
     },
     {
-      "name": "static_dom_loop.main",
+      "name": "/static_dom_loop/main()->()",
       "file_index": 0,
       "first_line": 26,
       "local": true

@@ -70,25 +70,25 @@ commit;
   ],
   "callables": [
     {
-      "name": "static_dom.main",
+      "name": "/static_dom/main()->()",
       "file_index": 0,
       "first_line": 18,
       "local": true
     },
     {
-      "name": "static_dom.fn1",
+      "name": "/static_dom/fn1(u32)->u32",
       "file_index": 0,
       "first_line": 9,
       "local": true
     },
     {
-      "name": "static_dom.fn2",
+      "name": "/static_dom/fn2(u32)->u32",
       "file_index": 0,
       "first_line": 12,
       "local": true
     },
     {
-      "name": "static_dom.fn3",
+      "name": "/static_dom/fn3(u32)->u32",
       "file_index": 0,
       "first_line": 15,
       "local": true

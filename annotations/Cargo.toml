@@ -2,7 +2,7 @@
 
 name = "mirai-annotations"
 version = "1.12.0"
-authors = ["Herman Venter <hermanv@fb.com>"]
+authors = ["Herman Venter <herman_venter@msn.com>"]
 description = "Macros that provide source code annotations for MIRAI"
 repository = "https://github.com/facebookexperimental/MIRAI"
 readme = "README.md"

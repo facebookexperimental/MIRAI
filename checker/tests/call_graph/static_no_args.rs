@@ -51,13 +51,13 @@ commit;
   ],
   "callables": [
     {
-      "name": "static_no_args.main",
+      "name": "/static_no_args/main()->()",
       "file_index": 0,
       "first_line": 13,
       "local": true
     },
     {
-      "name": "static_no_args.fn1",
+      "name": "/static_no_args/fn1()->u32",
       "file_index": 0,
       "first_line": 10,
       "local": true

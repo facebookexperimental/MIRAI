@@ -4,15 +4,29 @@
 // LICENSE file in the root directory of this source tree.
 //
 
-// Test case that ensures that a CROOT node is not duplicated if it
-// is analyzed by MIRAI after MIRAI analyzed its first call.
-
-pub fn main() {
-    fn1();
+pub trait Tr {
+    fn bar(&self) -> i32;
 }
 
-pub fn fn1() -> u32 {
-    1
+struct Bar {}
+
+impl Tr for Bar {
+    fn bar(&self) -> i32 {
+        1
+    }
+}
+
+struct BarTwo {}
+
+impl Tr for BarTwo {
+    fn bar(&self) -> i32 {
+        2
+    }
+}
+
+pub fn main() {
+    let bar = Bar {};
+    let _ = bar.bar();
 }
 
 /* CONFIG
@@ -27,38 +41,40 @@ pub fn fn1() -> u32 {
 
 /* EXPECTED:DOT
 digraph {
-    0 [ label = "\"replace_croot::main\"" ]
-    1 [ label = "\"replace_croot::fn1\"" ]
-    0 -> 1 [ ]
+    0 [ label = "\"trait::{impl#0}::bar\"" ]
+    1 [ label = "\"trait::{impl#1}::bar\"" ]
+    2 [ label = "\"trait::main\"" ]
+    2 -> 0 [ ]
 }
 */
 
 /* EXPECTED:DDLOG
 start;
-insert Edge(0,0,1);
+insert Edge(0,2,0);
 insert EdgeType(0,0);
 commit;
 */
 
 /* EXPECTED:TYPEMAP
 {
-  "0": ""
+  "0": "&Bar"
 }
 */
 
-/* EXPECTED:CALL_SITES{
+/* EXPECTED:CALL_SITES
+{
   "files": [
-    "tests/call_graph/replace_croot.rs"
+    "tests/call_graph/trait.rs"
   ],
   "callables": [
     {
-      "name": "/replace_croot/main()->()",
+      "name": "/trait/main()->()",
       "file_index": 0,
-      "first_line": 10,
+      "first_line": 27,
       "local": true
     },
     {
-      "name": "/replace_croot/fn1()->u32",
+      "name": "/trait/<Bar as Tr>::bar(&Bar)->i32",
       "file_index": 0,
       "first_line": 14,
       "local": true
@@ -67,10 +83,12 @@ commit;
   "calls": [
     [
       0,
-      11,
-      5,
+      29,
+      13,
       0,
       1
     ]
   ]
-}*/
+}
+
+*/

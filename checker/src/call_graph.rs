@@ -1440,7 +1440,7 @@ impl CallSiteOutput {
             Entry::Vacant(v) => {
                 v.insert(index);
                 let tcx = call_graph.tcx;
-                let name = crate::utils::summary_key_str(tcx, callable).to_string();
+                let name = crate::utils::def_id_as_qualified_name_str(tcx, callable).to_string();
                 let local = !call_graph.non_local_defs.contains(&callable);
                 let span = tcx.def_span(callable);
                 let source_map = tcx.sess.source_map();
