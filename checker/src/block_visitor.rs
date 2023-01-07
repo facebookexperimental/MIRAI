@@ -1003,7 +1003,11 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         closure_ty,
                         &self.type_visitor().generic_argument_map,
                     );
-                if let TyKind::Opaque(def_id, substs) = specialized_closure_ty.kind() {
+                if let TyKind::Alias(
+                    rustc_middle::ty::Opaque,
+                    rustc_middle::ty::AliasTy { def_id, substs, .. },
+                ) = specialized_closure_ty.kind()
+                {
                     let substs = self
                         .type_visitor()
                         .specialize_substs(substs, &self.type_visitor().generic_argument_map);
@@ -3291,7 +3295,10 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             TyKind::Closure(def_id, substs)
             | TyKind::FnDef(def_id, substs)
             | TyKind::Generator(def_id, substs, ..)
-            | TyKind::Opaque(def_id, substs) => {
+            | TyKind::Alias(
+                rustc_middle::ty::Opaque,
+                rustc_middle::ty::AliasTy { def_id, substs, .. },
+            ) => {
                 let specialized_ty = self.type_visitor().specialize_generic_argument_type(
                     ty,
                     &self.type_visitor().generic_argument_map,
@@ -3782,7 +3789,10 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     self.bv
                         .update_value_at(Path::new_function(base_path.clone()), func_val);
                 }
-                TyKind::Opaque(def_id, ..) => {
+                TyKind::Alias(
+                    rustc_middle::ty::Opaque,
+                    rustc_middle::ty::AliasTy { def_id, .. },
+                ) => {
                     if let TyKind::Closure(def_id, generic_args)
                     | TyKind::Generator(def_id, generic_args, _) =
                         self.bv.tcx.type_of(*def_id).kind()

@@ -17,7 +17,7 @@ use rustc_hir::Node;
 use rustc_middle::ty;
 use rustc_middle::ty::print::{FmtPrinter, Printer};
 use rustc_middle::ty::subst::{GenericArgKind, SubstsRef};
-use rustc_middle::ty::{DefIdTree, FloatTy, IntTy, ProjectionTy, Ty, TyCtxt, TyKind, UintTy};
+use rustc_middle::ty::{DefIdTree, FloatTy, IntTy, Ty, TyCtxt, TyKind, UintTy};
 
 /// Returns the location of the rust system binaries that are associated with this build of Mirai.
 /// The location is obtained by looking at the contents of the environmental variables that were
@@ -262,10 +262,13 @@ fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: TyCtxt<'tcx>) 
                 append_mangled_type(str, ty, tcx)
             }
         }
-        TyKind::Opaque(def_id, subs) => {
+        TyKind::Alias(
+            rustc_middle::ty::Opaque,
+            rustc_middle::ty::AliasTy { def_id, substs, .. },
+        ) => {
             str.push_str("impl_");
             str.push_str(qualified_type_name(tcx, *def_id).as_str());
-            for sub in *subs {
+            for sub in *substs {
                 if let GenericArgKind::Type(ty) = sub.unpack() {
                     str.push('_');
                     append_mangled_type(str, ty, tcx);
@@ -317,10 +320,10 @@ fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: TyCtxt<'tcx>) 
             str.push_str("generic_par_");
             str.push_str(param_ty.name.as_str());
         }
-        TyKind::Projection(projection_ty) => {
+        TyKind::Alias(rustc_middle::ty::Projection, projection_ty) => {
             append_mangled_type(str, projection_ty.self_ty(), tcx);
             str.push_str("_as_");
-            str.push_str(qualified_type_name(tcx, projection_ty.item_def_id).as_str());
+            str.push_str(qualified_type_name(tcx, projection_ty.def_id).as_str());
         }
         TyKind::Never => {
             str.push('_');
@@ -489,15 +492,17 @@ pub fn is_concrete(ty: &TyKind<'_>) -> bool {
         | TyKind::Closure(_, gen_args)
         | TyKind::FnDef(_, gen_args)
         | TyKind::Generator(_, gen_args, _)
-        | TyKind::Projection(ProjectionTy {
-            substs: gen_args, ..
-        }) => are_concrete(gen_args),
+        | TyKind::Alias(
+            _,
+            rustc_middle::ty::AliasTy {
+                substs: gen_args, ..
+            },
+        ) => are_concrete(gen_args),
         TyKind::Tuple(types) => types.iter().all(|t| is_concrete(t.kind())),
         TyKind::Bound(..)
         | TyKind::Dynamic(..)
         | TyKind::Error(..)
         | TyKind::Infer(..)
-        | TyKind::Opaque(..)
         | TyKind::Param(..) => false,
         TyKind::Ref(_, ty, _) => is_concrete(ty.kind()),
         _ => true,

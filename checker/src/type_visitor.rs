@@ -175,7 +175,10 @@ impl<'tcx> TypeVisitor<'tcx> {
                         .insert_mut(generator_field_path, generator_field_val);
                 }
             }
-            TyKind::Opaque(def_id, substs) => {
+            TyKind::Alias(
+                rustc_middle::ty::Opaque,
+                rustc_middle::ty::AliasTy { def_id, substs, .. },
+            ) => {
                 let map = self.get_generic_arguments_map(*def_id, substs, &[]);
                 let path_ty =
                     self.specialize_generic_argument_type(self.tcx.type_of(*def_id), &map);
@@ -252,9 +255,6 @@ impl<'tcx> TypeVisitor<'tcx> {
         }
     }
 
-    /// Returns true if the given type is a reference (or raw pointer) to a collection type, in which
-    /// case the reference/pointer independently tracks the length of the collection, thus effectively
-    /// tracking a slice of the underlying collection.
     #[logfn_inputs(TRACE)]
     pub fn is_function_like(&self, ty_kind: &TyKind<'tcx>) -> bool {
         matches!(
@@ -266,7 +266,7 @@ impl<'tcx> TypeVisitor<'tcx> {
                 | TyKind::Foreign(..)
                 | TyKind::Generator(..)
                 | TyKind::GeneratorWitness(..)
-                | TyKind::Opaque(..)
+                | TyKind::Alias(rustc_middle::ty::Opaque, ..)
         )
     }
 
@@ -417,7 +417,7 @@ impl<'tcx> TypeVisitor<'tcx> {
                         // is TOP, or BOTTOM or a heap layout.
                         return self.tcx.types.never;
                     }
-                    TyKind::Projection(..) => {
+                    TyKind::Alias(rustc_middle::ty::Projection, ..) => {
                         t = self.specialize_generic_argument_type(t, &self.generic_argument_map);
                     }
                     _ => {}
@@ -434,8 +434,12 @@ impl<'tcx> TypeVisitor<'tcx> {
                         ..
                     }
                     | PathSelector::Field(ordinal) => {
-                        if let TyKind::Opaque(def_id, subs) = &t.kind() {
-                            let map = self.get_generic_arguments_map(*def_id, subs, &[]);
+                        if let TyKind::Alias(
+                            rustc_middle::ty::Opaque,
+                            rustc_middle::ty::AliasTy { def_id, substs, .. },
+                        ) = &t.kind()
+                        {
+                            let map = self.get_generic_arguments_map(*def_id, substs, &[]);
                             t = self
                                 .specialize_generic_argument_type(self.tcx.type_of(*def_id), &map);
                             trace!("opaque type_of {:?}", t.kind());
@@ -1036,9 +1040,9 @@ impl<'tcx> TypeVisitor<'tcx> {
     ) -> Ty<'tcx> {
         // The projection of an associated type. For example,
         // `<T as Trait<..>>::N`.
-        if let TyKind::Projection(projection) = gen_arg_type.kind() {
+        if let TyKind::Alias(rustc_middle::ty::Projection, projection) = gen_arg_type.kind() {
             let specialized_substs = self.specialize_substs(projection.substs, map);
-            let item_def_id = projection.item_def_id;
+            let item_def_id = projection.def_id;
             return if utils::are_concrete(specialized_substs) {
                 let param_env = self
                     .tcx
@@ -1053,7 +1057,7 @@ impl<'tcx> TypeVisitor<'tcx> {
                     if item_def_id == instance_item_def_id {
                         return self
                             .tcx
-                            .mk_projection(projection.item_def_id, specialized_substs);
+                            .mk_projection(projection.def_id, specialized_substs);
                     }
                     let item_type = self.tcx.type_of(instance_item_def_id);
                     let map =
@@ -1082,7 +1086,7 @@ impl<'tcx> TypeVisitor<'tcx> {
                 }
             } else {
                 self.tcx
-                    .mk_projection(projection.item_def_id, specialized_substs)
+                    .mk_projection(projection.def_id, specialized_substs)
             };
         }
         if map.is_none() {
@@ -1149,19 +1153,19 @@ impl<'tcx> TypeVisitor<'tcx> {
                                 })
                             }
                             ExistentialPredicate::Projection(ExistentialProjection {
-                                item_def_id,
+                                def_id,
                                 substs,
                                 term,
                             }) => {
                                 if let Some(ty) = term.ty() {
                                     ExistentialPredicate::Projection(ExistentialProjection {
-                                        item_def_id,
+                                        def_id,
                                         substs: self.specialize_substs(substs, map),
                                         term: self.specialize_generic_argument_type(ty, map).into(),
                                     })
                                 } else {
                                     ExistentialPredicate::Projection(ExistentialProjection {
-                                        item_def_id,
+                                        def_id,
                                         substs: self.specialize_substs(substs, map),
                                         term,
                                     })
@@ -1219,7 +1223,10 @@ impl<'tcx> TypeVisitor<'tcx> {
                     .iter()
                     .map(|ty| self.specialize_generic_argument_type(ty, map)),
             ),
-            TyKind::Opaque(def_id, substs) => self
+            TyKind::Alias(
+                rustc_middle::ty::Opaque,
+                rustc_middle::ty::AliasTy { def_id, substs, .. },
+            ) => self
                 .tcx
                 .mk_opaque(*def_id, self.specialize_substs(substs, map)),
             TyKind::Param(ParamTy { name, .. }) => {
