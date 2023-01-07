@@ -362,8 +362,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                             let warning = self.bv.cv.session.struct_span_warn(
                                 span,
                                 format!(
-                                    "unknown tag type for constant-time verification: {}",
-                                    tag_name
+                                    "unknown tag type for constant-time verification: {tag_name}",
                                 )
                                 .as_str(),
                             );
@@ -527,7 +526,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     self,
                     destructor.did,
                     Some(callee_generic_arguments),
-                    callee_generic_argument_map.clone(),
+                    callee_generic_argument_map,
                     self.bv.current_environment.clone(),
                     func_const,
                 );
@@ -712,7 +711,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             self,
             callee_def_id,
             Some(callee_generic_arguments),
-            callee_generic_argument_map.clone(),
+            callee_generic_argument_map,
             self.bv.current_environment.clone(),
             func_const,
         );
@@ -1165,7 +1164,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     .sess
                     .source_map()
                     .span_to_diagnostic_string(*pc_span);
-                warning.span_note(*pc_span, &format!("related location {}", span_str));
+                warning.span_note(*pc_span, &format!("related location {span_str}"));
             }
         }
         self.bv.emit_diagnostic(warning);
@@ -1275,7 +1274,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     // promote the path as a precondition. I.e. the program is only correct,
                     // albeit badly written, if we never get here.
                     let condition = promotable_entry_cond.logical_not();
-                    let message = Rc::from(format!("possible {}", message));
+                    let message = Rc::from(format!("possible {message}"));
                     let precondition = Precondition {
                         condition,
                         message,
@@ -1288,7 +1287,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             return None;
         }
 
-        let warning = format!("possible {}", message);
+        let warning = format!("possible {message}");
 
         // We might get here, or not, and the condition might be false, or not.
         // Give a warning if we don't know all of the callers, or if we run into a k-limit
@@ -1411,10 +1410,9 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         let warning = self.bv.cv.session.struct_span_warn(
                             span,
                             format!(
-                                "the {} may have a {} tag, \
+                                "the {value_name} may have a {tag_name} tag, \
                                 and the tag check cannot be promoted as a precondition, \
                                 because it contains local variables",
-                                value_name, tag_name
                             )
                             .as_str(),
                         );
@@ -1428,7 +1426,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     let span = self.bv.current_span.source_callsite();
                     let warning = self.bv.cv.session.struct_span_warn(
                         span,
-                        format!("the {} has a {} tag", value_name, tag_name).as_str(),
+                        format!("the {value_name} has a {tag_name} tag").as_str(),
                     );
                     self.bv.emit_diagnostic(warning);
                 }

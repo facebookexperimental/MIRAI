@@ -1578,10 +1578,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                         "deallocates"
                     }
                 );
-                let warning = self
-                    .cv
-                    .session
-                    .struct_span_warn(self.current_span, &message);
+                let warning = self.cv.session.struct_span_warn(self.current_span, message);
                 self.emit_diagnostic(warning);
             }
         }

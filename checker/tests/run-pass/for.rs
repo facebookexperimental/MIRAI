@@ -11,7 +11,5 @@ pub fn to_be(dst: &mut [u16]) {
         *v = v.to_be();
     }
 }
-// todo: fix this
-//~ The union is not fully initialized by this assignment
 
 pub fn main() {}

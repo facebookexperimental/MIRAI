@@ -449,189 +449,177 @@ impl Debug for Expression {
             Expression::Top => f.write_str("TOP"),
             Expression::Bottom => f.write_str("BOTTOM"),
             Expression::Add { left, right } => {
-                f.write_fmt(format_args!("({:?}) + ({:?})", left, right))
+                f.write_fmt(format_args!("({left:?}) + ({right:?})"))
             }
             Expression::AddOverflows { left, right, .. } => {
-                f.write_fmt(format_args!("overflows(({:?}) + ({:?}))", left, right))
+                f.write_fmt(format_args!("overflows(({left:?}) + ({right:?}))"))
             }
             Expression::And { left, right } => {
-                f.write_fmt(format_args!("({:?}) && ({:?})", left, right))
+                f.write_fmt(format_args!("({left:?}) && ({right:?})"))
             }
             Expression::BitAnd { left, right } => {
-                f.write_fmt(format_args!("({:?}) & ({:?})", left, right))
+                f.write_fmt(format_args!("({left:?}) & ({right:?})"))
             }
-            Expression::BitNot { operand, .. } => f.write_fmt(format_args!("~({:?})", operand)),
+            Expression::BitNot { operand, .. } => f.write_fmt(format_args!("~({operand:?})")),
             Expression::BitOr { left, right } => {
-                f.write_fmt(format_args!("({:?}) | ({:?})", left, right))
+                f.write_fmt(format_args!("({left:?}) | ({right:?})"))
             }
             Expression::BitXor { left, right } => {
-                f.write_fmt(format_args!("({:?}) ^ ({:?})", left, right))
+                f.write_fmt(format_args!("({left:?}) ^ ({right:?})"))
             }
             Expression::Cast {
                 operand,
                 target_type,
-            } => f.write_fmt(format_args!("({:?}) as {:?}", operand, target_type)),
+            } => f.write_fmt(format_args!("({operand:?}) as {target_type:?}")),
             Expression::CompileTimeConstant(c) => c.fmt(f),
             Expression::ConditionalExpression {
                 condition,
                 consequent,
                 alternate,
             } => f.write_fmt(format_args!(
-                "if {:?} {{ {:?} }} else {{ {:?} }}",
-                condition, consequent, alternate
+                "if {condition:?} {{ {consequent:?} }} else {{ {alternate:?} }}",
             )),
             Expression::Div { left, right } => {
-                f.write_fmt(format_args!("({:?}) / ({:?})", left, right))
+                f.write_fmt(format_args!("({left:?}) / ({right:?})"))
             }
             Expression::Equals { left, right } => {
-                f.write_fmt(format_args!("({:?}) == ({:?})", left, right))
+                f.write_fmt(format_args!("({left:?}) == ({right:?})"))
             }
             Expression::GreaterOrEqual { left, right } => {
-                f.write_fmt(format_args!("({:?}) >= ({:?})", left, right))
+                f.write_fmt(format_args!("({left:?}) >= ({right:?})"))
             }
             Expression::GreaterThan { left, right } => {
-                f.write_fmt(format_args!("({:?}) > ({:?})", left, right))
+                f.write_fmt(format_args!("({left:?}) > ({right:?})"))
             }
             Expression::HeapBlock {
                 abstract_address: address,
                 is_zeroed,
             } => f.write_fmt(format_args!(
-                "{}heap_{}",
+                "{}heap_{address}",
                 if *is_zeroed { "zeroed_" } else { "" },
-                *address,
             )),
             Expression::HeapBlockLayout {
                 length,
                 alignment,
                 source,
             } => f.write_fmt(format_args!(
-                "layout(length: {:?}; alignment: {:?}; source: {:?})",
-                length, alignment, source
+                "layout(length: {length:?}; alignment: {alignment:?}; source: {source:?})",
             )),
             Expression::IntrinsicBinary { left, right, name } => {
-                f.write_fmt(format_args!("({:?}).{:?}({:?})", left, name, right))
+                f.write_fmt(format_args!("({left:?}).{name:?}({right:?})"))
             }
             Expression::IntrinsicBitVectorUnary {
                 operand,
                 bit_length,
                 name,
             } => f.write_fmt(format_args!(
-                "({:?} as (i|u){}).{:?}()",
-                operand, bit_length, name
+                "({operand:?} as (i|u){bit_length}).{name:?}()",
             )),
             Expression::IntrinsicFloatingPointUnary { operand, name } => {
-                f.write_fmt(format_args!("({:?}).{:?}()", operand, name))
+                f.write_fmt(format_args!("({operand:?}).{name:?}()"))
             }
             Expression::Join { left, right } => {
-                f.write_fmt(format_args!("({:?}) join ({:?})", left, right))
+                f.write_fmt(format_args!("({left:?}) join ({right:?})"))
             }
             Expression::LessOrEqual { left, right } => {
-                f.write_fmt(format_args!("({:?}) <= ({:?})", left, right))
+                f.write_fmt(format_args!("({left:?}) <= ({right:?})"))
             }
             Expression::LessThan { left, right } => {
-                f.write_fmt(format_args!("({:?}) < ({:?})", left, right))
+                f.write_fmt(format_args!("({left:?}) < ({right:?})"))
             }
-            Expression::LogicalNot { operand } => f.write_fmt(format_args!("!({:?})", operand)),
+            Expression::LogicalNot { operand } => f.write_fmt(format_args!("!({operand:?})")),
             Expression::Memcmp {
                 left,
                 right,
                 length,
-            } => f.write_fmt(format_args!(
-                "memcmp({:?}, {:?}, {:?})",
-                left, right, length
-            )),
+            } => f.write_fmt(format_args!("memcmp({left:?}, {right:?}, {length:?})",)),
             Expression::Mul { left, right } => {
-                f.write_fmt(format_args!("({:?}) * ({:?})", left, right))
+                f.write_fmt(format_args!("({left:?}) * ({right:?})"))
             }
             Expression::MulOverflows { left, right, .. } => {
-                f.write_fmt(format_args!("overflows(({:?}) * ({:?}))", left, right))
+                f.write_fmt(format_args!("overflows(({left:?}) * ({right:?}))"))
             }
             Expression::Ne { left, right } => {
-                f.write_fmt(format_args!("({:?}) != ({:?})", left, right))
+                f.write_fmt(format_args!("({left:?}) != ({right:?})"))
             }
-            Expression::Neg { operand } => f.write_fmt(format_args!("-({:?})", operand)),
+            Expression::Neg { operand } => f.write_fmt(format_args!("-({operand:?})")),
             Expression::Or { left, right } => {
-                f.write_fmt(format_args!("({:?}) || ({:?})", left, right))
+                f.write_fmt(format_args!("({left:?}) || ({right:?})"))
             }
             Expression::Offset { left, right } => {
-                f.write_fmt(format_args!("&({:?})[{:?}]", left, right))
+                f.write_fmt(format_args!("&({left:?})[{right:?}]"))
             }
-            Expression::Reference(path) => f.write_fmt(format_args!("&({:?})", path)),
+            Expression::Reference(path) => f.write_fmt(format_args!("&({path:?})")),
             Expression::InitialParameterValue { path, var_type } => {
-                f.write_fmt(format_args!("old({:?}): {:?}", path, var_type))
+                f.write_fmt(format_args!("old({path:?}): {var_type:?}"))
             }
             Expression::Rem { left, right } => {
-                f.write_fmt(format_args!("({:?}) % ({:?})", left, right))
+                f.write_fmt(format_args!("({left:?}) % ({right:?})"))
             }
             Expression::Shl { left, right } => {
-                f.write_fmt(format_args!("({:?}) << ({:?})", left, right))
+                f.write_fmt(format_args!("({left:?}) << ({right:?})"))
             }
             Expression::ShlOverflows { left, right, .. } => {
-                f.write_fmt(format_args!("overflows(({:?}) << ({:?}))", left, right))
+                f.write_fmt(format_args!("overflows(({left:?}) << ({right:?}))"))
             }
             Expression::Shr { left, right, .. } => {
-                f.write_fmt(format_args!("({:?}) >> ({:?})", left, right))
+                f.write_fmt(format_args!("({left:?}) >> ({right:?})"))
             }
             Expression::ShrOverflows { left, right, .. } => {
-                f.write_fmt(format_args!("overflows(({:?}) >> ({:?}))", left, right))
+                f.write_fmt(format_args!("overflows(({left:?}) >> ({right:?}))"))
             }
             Expression::Sub { left, right } => {
-                f.write_fmt(format_args!("({:?}) - ({:?})", left, right))
+                f.write_fmt(format_args!("({left:?}) - ({right:?})"))
             }
             Expression::SubOverflows { left, right, .. } => {
-                f.write_fmt(format_args!("overflows(({:?}) - ({:?}))", left, right))
+                f.write_fmt(format_args!("overflows(({left:?}) - ({right:?}))"))
             }
             Expression::Switch {
                 discriminator,
                 cases,
                 default,
             } => {
-                f.write_fmt(format_args!("switch {:?} {{", discriminator))?;
+                f.write_fmt(format_args!("switch {discriminator:?} {{"))?;
                 for (switch_case, value) in cases {
-                    f.write_fmt(format_args!(" {:?} => {:?},", switch_case, value))?;
+                    f.write_fmt(format_args!(" {switch_case:?} => {value:?},"))?;
                 }
-                f.write_fmt(format_args!(" _ => {:?}", default))?;
+                f.write_fmt(format_args!(" _ => {default:?}"))?;
                 f.write_str(" }")
             }
             Expression::TaggedExpression { operand, tag } => {
-                f.write_fmt(format_args!("{:?} tagged with {:?}", operand, tag))
+                f.write_fmt(format_args!("{operand:?} tagged with {tag:?}"))
             }
             Expression::Transmute {
                 operand,
                 target_type,
-            } => f.write_fmt(format_args!("transmute({:?}, {:?})", operand, target_type)),
+            } => f.write_fmt(format_args!("transmute({operand:?}, {target_type:?})")),
             Expression::UninterpretedCall {
                 callee,
                 arguments,
                 result_type,
                 path,
-            } => {
-                let _callee_txt = format!("{:?}", callee);
-                f.write_fmt(format_args!(
-                    "uninterpreted_call({:?}({:?}) -> {:?}) at {:?}",
-                    callee, arguments, result_type, path
-                ))
-            }
+            } => f.write_fmt(format_args!(
+                "uninterpreted_call({callee:?}({arguments:?}) -> {result_type:?}) at {path:?}",
+            )),
             Expression::UnknownModelField { path, default } => {
-                f.write_fmt(format_args!("({:?}).default(({:?})", path, default))
+                f.write_fmt(format_args!("({path:?}).default(({default:?})"))
             }
             Expression::UnknownTagCheck {
                 operand,
                 tag,
                 checking_presence,
             } => f.write_fmt(format_args!(
-                "({:?}).check_tag({:?}, {})",
-                operand, tag, checking_presence
+                "({operand:?}).check_tag({tag:?}, {checking_presence})",
             )),
             Expression::UnknownTagField { path } => path.fmt(f),
             Expression::Variable { path, var_type } => {
-                f.write_fmt(format_args!("{:?}: {:?}", path, var_type))
+                f.write_fmt(format_args!("{path:?}: {var_type:?}"))
             }
             Expression::WidenedJoin { path, operand } => {
                 if operand.expression_size > 100 {
-                    f.write_fmt(format_args!("widened(..) at {:?}", path))
+                    f.write_fmt(format_args!("widened(..) at {path:?}",))
                 } else {
-                    f.write_fmt(format_args!("widened({:?}) at {:?}", operand, path))
+                    f.write_fmt(format_args!("widened({operand:?}) at {path:?}"))
                 }
             }
         }

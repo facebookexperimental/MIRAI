@@ -896,7 +896,7 @@ impl Z3Solver {
     where
         T: Debug,
     {
-        let sym_str = CString::new(format!("{:?}", value)).unwrap();
+        let sym_str = CString::new(format!("{value:?}")).unwrap();
         unsafe { z3_sys::Z3_mk_string_symbol(self.z3_context, sym_str.into_raw()) }
     }
 

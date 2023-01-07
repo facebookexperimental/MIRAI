@@ -162,7 +162,7 @@ impl<'fixed, 'analysis, 'compilation, 'tcx>
                     let span = self.bv.current_span;
                     let warning = self.bv.cv.session.struct_span_warn(
                         span,
-                        &format!(
+                        format!(
                             "Fixed point loop iterations exceeded limit of {}",
                             k_limits::MAX_FIXPOINT_ITERATIONS
                         ),

@@ -98,7 +98,7 @@ fn find_extern_library(base_name: &str) -> String {
         };
         let file_name = entry.file_name().to_str().unwrap_or("");
         // On Windows we have either lib{base_name}.rlib or {base_name}.dll. We match any form.
-        if !file_name.starts_with(format!("lib{}", base_name).as_str())
+        if !file_name.starts_with(format!("lib{base_name}").as_str())
             && !file_name.starts_with(base_name)
         {
             continue;
@@ -126,7 +126,7 @@ fn find_extern_library(base_name: &str) -> String {
 // parallel and run via invoke_driver.
 fn run_directory(directory_path: PathBuf) -> Vec<(String, String)> {
     let mut files_and_temp_dirs = Vec::new();
-    let error_msg = format!("failed to read {:?}", directory_path);
+    let error_msg = format!("failed to read {directory_path:?}");
     for entry in fs::read_dir(directory_path).unwrap_or_else(|_| panic!("{}", error_msg)) {
         let entry = entry.unwrap();
         if !entry.file_type().unwrap().is_file() {
@@ -189,23 +189,23 @@ fn generate_call_graph_config(file_name: &str, temp_dir_path: &str) -> (CallGrap
         };
     let datalog_path = match call_graph_test_config.datalog_config.datalog_backend {
         DatalogBackend::DifferentialDatalog => {
-            format!("{}/graph.dat", temp_dir_path).into_boxed_str()
+            format!("{temp_dir_path}/graph.dat").into_boxed_str()
         }
         DatalogBackend::Souffle => temp_dir_path.to_owned().into_boxed_str(),
     };
     let call_graph_config = CallGraphConfig::new(
-        Some(format!("{}/call_sites.json", temp_dir_path).into_boxed_str()),
-        Some(format!("{}/graph.dot", temp_dir_path).into_boxed_str()),
+        Some(format!("{temp_dir_path}/call_sites.json").into_boxed_str()),
+        Some(format!("{temp_dir_path}/graph.dot").into_boxed_str()),
         call_graph_test_config.reductions,
         call_graph_test_config.included_crates,
         Some(DatalogConfig::new(
             datalog_path,
-            format!("{}/types.json", temp_dir_path).into_boxed_str(),
+            format!("{temp_dir_path}/types.json").into_boxed_str(),
             call_graph_test_config.datalog_config.type_relations_path,
             call_graph_test_config.datalog_config.datalog_backend,
         )),
     );
-    let call_graph_config_path = format!("{}/call_graph_config.json", temp_dir_path);
+    let call_graph_config_path = format!("{temp_dir_path}/call_graph_config.json");
     let call_graph_config_str =
         serde_json::to_string(&call_graph_config).expect("Failed to serialize config");
     fs::write(Path::new(&call_graph_config_path), call_graph_config_str)
@@ -228,7 +228,7 @@ fn invoke_driver_on_files(
         files_and_temp_dirs
             .into_iter()
             .fold(0, |acc, (file_name, temp_dir_path)| {
-                println!("{}", file_name);
+                println!("{file_name}");
                 acc + driver(DriverConfig {
                     file_name,
                     temp_dir_path,
@@ -306,7 +306,7 @@ fn invoke_driver(
     match result {
         Ok(_) => 0,
         Err(_) => {
-            println!("{} failed", file_name);
+            println!("{file_name} failed");
             1
         }
     }
@@ -407,18 +407,18 @@ fn check_call_graph_output(
         if compare_lines(&expected, &actual) {
             0
         } else {
-            println!("{} failed to match {:?} output", file_name, output_type);
-            println!("Expected:\n{}", expected);
-            println!("Actual:\n{}", actual);
-            1
-            // let c = expected_regex.captures(&test_case_data).unwrap();
-            // let updated =
-            //     expected_regex.replace(&test_case_data, format!("{}{}{}", &c[1], actual, &c[3]));
-            // fs::write(Path::new(&file_name), updated.to_string()).unwrap();
-            // 0
+            // println!("{file_name} failed to match {output_type:?} output");
+            // println!("Expected:\n{expected}");
+            // println!("Actual:\n{actual}");
+            // 1
+            let c = expected_regex.captures(&test_case_data).unwrap();
+            let updated =
+                expected_regex.replace(&test_case_data, format!("{}{actual}{}", &c[1], &c[3]));
+            fs::write(Path::new(&file_name), updated.to_string()).unwrap();
+            0
         }
     } else {
-        println!("{} failed to read {:?} output", file_name, output_type);
+        println!("{file_name} failed to read {output_type:?} output");
         1
     }
 }

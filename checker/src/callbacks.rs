@@ -133,9 +133,9 @@ impl MiraiCallbacks {
             for local_def_id in tcx.hir().body_owners() {
                 let def_id = local_def_id.to_def_id();
                 let span = tcx.def_span(def_id);
-                eprint!("{:?}: ", span);
+                eprint!("{span:?}: ");
                 let name = utils::def_id_as_qualified_name_str(tcx, def_id);
-                eprintln!("{}", name);
+                eprintln!("{name}");
             }
             return;
         }

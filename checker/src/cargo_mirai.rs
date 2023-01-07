@@ -10,7 +10,6 @@
 // 3) It runs cargo test --no-run for test targets.
 
 use cargo_metadata::{Package, Target};
-use rustc_tools_util::VersionInfo;
 use std::ffi::OsString;
 use std::ops::Index;
 use std::path::Path;
@@ -24,12 +23,12 @@ Usage:
 
 pub fn main() {
     if std::env::args().any(|a| a == "--help" || a == "-h") {
-        println!("{}", CARGO_MIRAI_HELP);
+        println!("{CARGO_MIRAI_HELP}");
         return;
     }
     if std::env::args().any(|a| a == "--version" || a == "-V") {
         let version_info = rustc_tools_util::get_version_info!();
-        println!("{}", version_info);
+        println!("{version_info}");
         return;
     }
 
@@ -46,7 +45,7 @@ pub fn main() {
         }
         Some(arg) => {
             eprintln!(
-                "`cargo-mirai` called with invalid first argument: {}; please only invoke this binary through `cargo mirai`", arg
+                "`cargo-mirai` called with invalid first argument: {arg}; please only invoke this binary through `cargo mirai`" 
             );
         }
         _ => {

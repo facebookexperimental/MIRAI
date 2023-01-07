@@ -193,26 +193,26 @@ impl Debug for PathEnum {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
             PathEnum::Computed { value } => value.fmt(f),
-            PathEnum::HeapBlock { value } => f.write_fmt(format_args!("<{:?}>", value)),
+            PathEnum::HeapBlock { value } => f.write_fmt(format_args!("<{value:?}>")),
             PathEnum::LocalVariable {
                 ordinal,
                 type_index,
-            } => f.write_fmt(format_args!("local_{}({})", ordinal, type_index)),
-            PathEnum::Offset { value } => f.write_fmt(format_args!("<{:?}>", value)),
-            PathEnum::Parameter { ordinal } => f.write_fmt(format_args!("param_{}", ordinal)),
+            } => f.write_fmt(format_args!("local_{ordinal}({type_index})")),
+            PathEnum::Offset { value } => f.write_fmt(format_args!("<{value:?}>")),
+            PathEnum::Parameter { ordinal } => f.write_fmt(format_args!("param_{ordinal}")),
             PathEnum::Result => f.write_str("result"),
             PathEnum::StaticVariable {
                 summary_cache_key, ..
             } => summary_cache_key.fmt(f),
             PathEnum::PhantomData => f.write_str("phantom_data"),
             PathEnum::PromotedConstant { ordinal } => {
-                f.write_fmt(format_args!("constant_{}", ordinal))
+                f.write_fmt(format_args!("constant_{ordinal}"))
             }
             PathEnum::QualifiedPath {
                 qualifier,
                 selector,
                 ..
-            } => f.write_fmt(format_args!("{:?}.{:?}", qualifier, selector)),
+            } => f.write_fmt(format_args!("{qualifier:?}.{selector:?}")),
         }
     }
 }
@@ -1214,29 +1214,26 @@ impl Debug for PathSelector {
             PathSelector::UnionField {
                 case_index,
                 num_cases,
-            } => f.write_fmt(format_args!("({:?} of {:?})", case_index, num_cases)),
+            } => f.write_fmt(format_args!("({case_index:?} of {num_cases:?})")),
             PathSelector::Index(value) => {
                 if value.expression_size > 100 {
                     f.write_fmt(format_args!("[...]"))
                 } else {
-                    f.write_fmt(format_args!("[{:?}]", value))
+                    f.write_fmt(format_args!("[{value:?}]"))
                 }
             }
-            PathSelector::Slice(value) => f.write_fmt(format_args!("[0..{:?}]", value)),
+            PathSelector::Slice(value) => f.write_fmt(format_args!("[0..{value:?}]")),
             PathSelector::ConstantIndex {
                 offset,
                 min_length,
                 from_end,
             } => f.write_fmt(format_args!(
-                "[offset: {}, min_length: {}, from_end: {}]",
-                offset, min_length, from_end
+                "[offset: {offset}, min_length: {min_length}, from_end: {from_end}]",
             )),
             PathSelector::ConstantSlice { from, to, from_end } => {
-                f.write_fmt(format_args!("[{} : {}, from_end: {}]", from, to, from_end))
+                f.write_fmt(format_args!("[{from} : {to}, from_end: {from_end}]"))
             }
-            PathSelector::Downcast(name, index) => {
-                f.write_fmt(format_args!("as {}({})", name, *index))
-            }
+            PathSelector::Downcast(name, index) => f.write_fmt(format_args!("as {name}({index})")),
             PathSelector::ModelField(name) => name.fmt(f),
             PathSelector::TagField => f.write_str("$tag"),
         }

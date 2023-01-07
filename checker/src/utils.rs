@@ -31,7 +31,7 @@ pub fn find_sysroot() -> String {
     let home = option_env!("RUSTUP_HOME");
     let toolchain = option_env!("RUSTUP_TOOLCHAIN");
     match (home, toolchain) {
-        (Some(home), Some(toolchain)) => format!("{}/toolchains/{}", home, toolchain),
+        (Some(home), Some(toolchain)) => format!("{home}/toolchains/{toolchain}"),
         _ => option_env!("RUST_SYSROOT")
             .expect(
                 "Could not find sysroot. Specify the RUST_SYSROOT environment variable, \
@@ -332,7 +332,7 @@ fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: TyCtxt<'tcx>) 
             //todo: add cases as the need arises, meanwhile make the need obvious.
             debug!("{:?}", ty);
             debug!("{:?}", ty.kind());
-            write!(str, "default formatted {:?}", ty).expect("enough space");
+            write!(str, "default formatted {ty:?}").expect("enough space");
         }
     }
 }
@@ -452,7 +452,7 @@ pub fn def_id_as_qualified_name_str(tcx: TyCtxt<'_>, def_id: DefId) -> Rc<str> {
             } else {
                 name.push(',')
             }
-            name.push_str(&format!("{:?}", param_ty));
+            name.push_str(&format!("{param_ty:?}"));
         }
         name.push_str(")->");
         name.push_str(&format!("{:?}", fn_sig.output()));
@@ -516,7 +516,7 @@ pub fn pretty_print_mir(tcx: TyCtxt<'_>, def_id: DefId) {
         rustc_hir::def::DefKind::Struct | rustc_hir::def::DefKind::Variant
     ) {
         let mut stdout = std::io::stdout();
-        stdout.write_fmt(format_args!("{:?}", def_id)).unwrap();
+        stdout.write_fmt(format_args!("{def_id:?}")).unwrap();
         rustc_middle::mir::write_mir_pretty(tcx, Some(def_id), &mut stdout).unwrap();
         let _ = stdout.flush();
     }
