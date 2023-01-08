@@ -69,25 +69,25 @@ commit;
   ],
   "callables": [
     {
-      "name": "fnptr.fn1",
+      "name": "/fnptr/fn1(u32,&fn(u32) -> u32)->u32",
       "file_index": 0,
       "first_line": 9,
       "local": true
     },
     {
-      "name": "fnptr.fn2",
+      "name": "/fnptr/fn2(u32)->u32",
       "file_index": 0,
       "first_line": 12,
       "local": true
     },
     {
-      "name": "fnptr.fn3",
+      "name": "/fnptr/fn3(u32)->u32",
       "file_index": 0,
       "first_line": 15,
       "local": true
     },
     {
-      "name": "fnptr.main",
+      "name": "/fnptr/main()->()",
       "file_index": 0,
       "first_line": 18,
       "local": true

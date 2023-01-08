@@ -82,31 +82,31 @@ digraph {
   ],
   "callables": [
     {
-      "name": "fnptr_dom_loop_souffle.fn1",
+      "name": "/fnptr_dom_loop_souffle/fn1(u32,&fn(u32) -> u32,&fn(u32) -> u32)->u32",
       "file_index": 0,
       "first_line": 10,
       "local": true
     },
     {
-      "name": "fnptr_dom_loop_souffle.fn2",
+      "name": "/fnptr_dom_loop_souffle/fn2(u32)->u32",
       "file_index": 0,
       "first_line": 14,
       "local": true
     },
     {
-      "name": "fnptr_dom_loop_souffle.fn3",
+      "name": "/fnptr_dom_loop_souffle/fn3(u32)->u32",
       "file_index": 0,
       "first_line": 17,
       "local": true
     },
     {
-      "name": "fnptr_dom_loop_souffle.fn4",
+      "name": "/fnptr_dom_loop_souffle/fn4(u32)->u32",
       "file_index": 0,
       "first_line": 20,
       "local": true
     },
     {
-      "name": "fnptr_dom_loop_souffle.main",
+      "name": "/fnptr_dom_loop_souffle/main()->()",
       "file_index": 0,
       "first_line": 27,
       "local": true

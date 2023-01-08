@@ -73,37 +73,37 @@ commit;
   ],
   "callables": [
     {
-      "name": "fnptr_fold.fn1",
+      "name": "/fnptr_fold/fn1(u32,&fn(u32) -> u32)->u32",
       "file_index": 0,
       "first_line": 10,
       "local": true
     },
     {
-      "name": "fnptr_fold.fn2",
+      "name": "/fnptr_fold/fn2(u32)->u32",
       "file_index": 0,
       "first_line": 13,
       "local": true
     },
     {
-      "name": "fnptr_fold.fn3",
+      "name": "/fnptr_fold/fn3(u32)->u32",
       "file_index": 0,
       "first_line": 16,
       "local": true
     },
     {
-      "name": "fnptr_fold.main",
+      "name": "/fnptr_fold/main()->()",
       "file_index": 0,
       "first_line": 20,
       "local": true
     },
     {
-      "name": "std.io.stdio._print",
+      "name": "/std/std::io::_print(std::fmt::Arguments<'_>)->()",
       "file_index": 1,
       "first_line": 1073,
       "local": false
     },
     {
-      "name": "core.fmt.implement_core_fmt_Arguments.new_v1",
+      "name": "/core/std::fmt::Arguments::<'a>::new_v1(&'a [&'static str],&'a [std::fmt::ArgumentV1<'a>])->std::fmt::Arguments<'a>",
       "file_index": 2,
       "first_line": 394,
       "local": true

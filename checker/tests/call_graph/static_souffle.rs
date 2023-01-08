@@ -63,25 +63,25 @@ digraph {
   ],
   "callables": [
     {
-      "name": "static_souffle.fn1",
+      "name": "/static_souffle/fn1(u32)->u32",
       "file_index": 0,
       "first_line": 10,
       "local": true
     },
     {
-      "name": "static_souffle.fn2",
+      "name": "/static_souffle/fn2(u32)->u32",
       "file_index": 0,
       "first_line": 13,
       "local": true
     },
     {
-      "name": "static_souffle.fn3",
+      "name": "/static_souffle/fn3(u32)->u32",
       "file_index": 0,
       "first_line": 16,
       "local": true
     },
     {
-      "name": "static_souffle.main",
+      "name": "/static_souffle/main()->()",
       "file_index": 0,
       "first_line": 19,
       "local": true

@@ -72,25 +72,25 @@ commit;
   ],
   "callables": [
     {
-      "name": "static_loop.fn1",
+      "name": "/static_loop/fn1(u32)->u32",
       "file_index": 0,
       "first_line": 9,
       "local": true
     },
     {
-      "name": "static_loop.fn2",
+      "name": "/static_loop/fn2(u32)->u32",
       "file_index": 0,
       "first_line": 12,
       "local": true
     },
     {
-      "name": "static_loop.fn3",
+      "name": "/static_loop/fn3(u32)->u32",
       "file_index": 0,
       "first_line": 15,
       "local": true
     },
     {
-      "name": "static_loop.main",
+      "name": "/static_loop/main()->()",
       "file_index": 0,
       "first_line": 22,
       "local": true

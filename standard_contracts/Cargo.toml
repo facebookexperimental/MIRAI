@@ -2,7 +2,7 @@
 
 name = "mirai-standard-contracts"
 version = "0.0.1"
-authors = ["Herman Venter <hermanv@fb.com>"]
+authors = ["Herman Venter <herman_venter@msn.com>"]
 description = "Specifications of standard library functions for MIRAI"
 repository = "https://github.com/facebookexperimental/MIRAI"
 readme = "README.md"

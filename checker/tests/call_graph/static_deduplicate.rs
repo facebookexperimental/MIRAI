@@ -66,25 +66,25 @@ commit;
   ],
   "callables": [
     {
-      "name": "static_deduplicate.fn1",
+      "name": "/static_deduplicate/fn1(u32,&str)->(u32, &str)",
       "file_index": 0,
       "first_line": 10,
       "local": true
     },
     {
-      "name": "static_deduplicate.fn2",
+      "name": "/static_deduplicate/fn2(u32,&str)->(u32, &str)",
       "file_index": 0,
       "first_line": 13,
       "local": true
     },
     {
-      "name": "static_deduplicate.fn3",
+      "name": "/static_deduplicate/fn3(u32,&str)->(u32, &str)",
       "file_index": 0,
       "first_line": 16,
       "local": true
     },
     {
-      "name": "static_deduplicate.main",
+      "name": "/static_deduplicate/main()->()",
       "file_index": 0,
       "first_line": 19,
       "local": true
