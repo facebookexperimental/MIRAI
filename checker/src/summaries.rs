@@ -667,7 +667,7 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'tcx> {
             .db
             .insert(persistent_key.as_bytes(), serialized_summary);
         if result.is_err() {
-            println!("unable to set key in summary database: {:?}", result);
+            println!("unable to set key in summary database: {result:?}");
         }
         self.def_id_cache.insert(def_id, summary)
     }

@@ -1578,10 +1578,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                         "deallocates"
                     }
                 );
-                let warning = self
-                    .cv
-                    .session
-                    .struct_span_warn(self.current_span, &message);
+                let warning = self.cv.session.struct_span_warn(self.current_span, message);
                 self.emit_diagnostic(warning);
             }
         }
@@ -1792,22 +1789,22 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
         ) {
             if let Some(int_ty) = def.repr().int {
                 let ty = match int_ty {
-                    rustc_attr::IntType::SignedInt(t) => match t {
-                        rustc_ast::IntTy::Isize => tcx.types.isize,
-                        rustc_ast::IntTy::I8 => tcx.types.i8,
-                        rustc_ast::IntTy::I16 => tcx.types.i16,
-                        rustc_ast::IntTy::I32 => tcx.types.i32,
-                        rustc_ast::IntTy::I64 => tcx.types.i64,
-                        rustc_ast::IntTy::I128 => tcx.types.i128,
+                    rustc_abi::IntegerType::Fixed(t, true) => match t {
+                        rustc_abi::Integer::I8 => tcx.types.i8,
+                        rustc_abi::Integer::I16 => tcx.types.i16,
+                        rustc_abi::Integer::I32 => tcx.types.i32,
+                        rustc_abi::Integer::I64 => tcx.types.i64,
+                        rustc_abi::Integer::I128 => tcx.types.i128,
                     },
-                    rustc_attr::IntType::UnsignedInt(t) => match t {
-                        rustc_ast::UintTy::Usize => tcx.types.usize,
-                        rustc_ast::UintTy::U8 => tcx.types.u8,
-                        rustc_ast::UintTy::U16 => tcx.types.u16,
-                        rustc_ast::UintTy::U32 => tcx.types.u32,
-                        rustc_ast::UintTy::U64 => tcx.types.u64,
-                        rustc_ast::UintTy::U128 => tcx.types.u128,
+                    rustc_abi::IntegerType::Fixed(t, false) => match t {
+                        rustc_abi::Integer::I8 => tcx.types.u8,
+                        rustc_abi::Integer::I16 => tcx.types.u16,
+                        rustc_abi::Integer::I32 => tcx.types.u32,
+                        rustc_abi::Integer::I64 => tcx.types.u64,
+                        rustc_abi::Integer::I128 => tcx.types.u128,
                     },
+                    rustc_abi::IntegerType::Pointer(true) => tcx.types.isize,
+                    rustc_abi::IntegerType::Pointer(false) => tcx.types.usize,
                 };
                 let discr_path = Path::new_discriminant(path);
                 accumulator.push((discr_path, ty));

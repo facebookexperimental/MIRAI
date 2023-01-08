@@ -281,11 +281,9 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         self.bv.current_span = source_info.span;
         match kind {
             mir::TerminatorKind::Goto { target } => self.visit_goto(*target),
-            mir::TerminatorKind::SwitchInt {
-                discr,
-                switch_ty,
-                targets,
-            } => self.visit_switch_int(discr, *switch_ty, targets),
+            mir::TerminatorKind::SwitchInt { discr, targets } => {
+                self.visit_switch_int(discr, discr.ty(self.bv.mir, self.bv.tcx), targets)
+            }
             mir::TerminatorKind::Resume => self.visit_resume(),
             mir::TerminatorKind::Abort => self.visit_abort(),
             mir::TerminatorKind::Return => self.visit_return(),
@@ -364,8 +362,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                             let warning = self.bv.cv.session.struct_span_warn(
                                 span,
                                 format!(
-                                    "unknown tag type for constant-time verification: {}",
-                                    tag_name
+                                    "unknown tag type for constant-time verification: {tag_name}",
                                 )
                                 .as_str(),
                             );
@@ -529,7 +526,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     self,
                     destructor.did,
                     Some(callee_generic_arguments),
-                    callee_generic_argument_map.clone(),
+                    callee_generic_argument_map,
                     self.bv.current_environment.clone(),
                     func_const,
                 );
@@ -714,7 +711,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             self,
             callee_def_id,
             Some(callee_generic_arguments),
-            callee_generic_argument_map.clone(),
+            callee_generic_argument_map,
             self.bv.current_environment.clone(),
             func_const,
         );
@@ -1005,7 +1002,11 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         closure_ty,
                         &self.type_visitor().generic_argument_map,
                     );
-                if let TyKind::Opaque(def_id, substs) = specialized_closure_ty.kind() {
+                if let TyKind::Alias(
+                    rustc_middle::ty::Opaque,
+                    rustc_middle::ty::AliasTy { def_id, substs, .. },
+                ) = specialized_closure_ty.kind()
+                {
                     let substs = self
                         .type_visitor()
                         .specialize_substs(substs, &self.type_visitor().generic_argument_map);
@@ -1163,7 +1164,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     .sess
                     .source_map()
                     .span_to_diagnostic_string(*pc_span);
-                warning.span_note(*pc_span, &format!("related location {}", span_str));
+                warning.span_note(*pc_span, &format!("related location {span_str}"));
             }
         }
         self.bv.emit_diagnostic(warning);
@@ -1273,7 +1274,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     // promote the path as a precondition. I.e. the program is only correct,
                     // albeit badly written, if we never get here.
                     let condition = promotable_entry_cond.logical_not();
-                    let message = Rc::from(format!("possible {}", message));
+                    let message = Rc::from(format!("possible {message}"));
                     let precondition = Precondition {
                         condition,
                         message,
@@ -1286,7 +1287,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             return None;
         }
 
-        let warning = format!("possible {}", message);
+        let warning = format!("possible {message}");
 
         // We might get here, or not, and the condition might be false, or not.
         // Give a warning if we don't know all of the callers, or if we run into a k-limit
@@ -1409,10 +1410,9 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         let warning = self.bv.cv.session.struct_span_warn(
                             span,
                             format!(
-                                "the {} may have a {} tag, \
+                                "the {value_name} may have a {tag_name} tag, \
                                 and the tag check cannot be promoted as a precondition, \
                                 because it contains local variables",
-                                value_name, tag_name
                             )
                             .as_str(),
                         );
@@ -1426,7 +1426,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     let span = self.bv.current_span.source_callsite();
                     let warning = self.bv.cv.session.struct_span_warn(
                         span,
-                        format!("the {} has a {} tag", value_name, tag_name).as_str(),
+                        format!("the {value_name} has a {tag_name} tag").as_str(),
                     );
                     self.bv.emit_diagnostic(warning);
                 }
@@ -3293,7 +3293,10 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             TyKind::Closure(def_id, substs)
             | TyKind::FnDef(def_id, substs)
             | TyKind::Generator(def_id, substs, ..)
-            | TyKind::Opaque(def_id, substs) => {
+            | TyKind::Alias(
+                rustc_middle::ty::Opaque,
+                rustc_middle::ty::AliasTy { def_id, substs, .. },
+            ) => {
                 let specialized_ty = self.type_visitor().specialize_generic_argument_type(
                     ty,
                     &self.type_visitor().generic_argument_map,
@@ -3551,7 +3554,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         } else {
                             trace!("data {:?}", data);
                             discr_has_data = true;
-                            let fields = &variants[untagged_variant].fields();
+                            let fields = &variants[untagged_variant].fields;
                             checked_assume!(
                                 fields.count() == 1
                                     && fields.offset(0).bytes() == 0
@@ -3784,7 +3787,10 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     self.bv
                         .update_value_at(Path::new_function(base_path.clone()), func_val);
                 }
-                TyKind::Opaque(def_id, ..) => {
+                TyKind::Alias(
+                    rustc_middle::ty::Opaque,
+                    rustc_middle::ty::AliasTy { def_id, .. },
+                ) => {
                     if let TyKind::Closure(def_id, generic_args)
                     | TyKind::Generator(def_id, generic_args, _) =
                         self.bv.tcx.type_of(*def_id).kind()

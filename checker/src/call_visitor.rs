@@ -1265,7 +1265,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                     substs.as_generator().substs,
                     &self.type_visitor().generic_argument_map,
                 )),
-                TyKind::FnDef(_, substs) | TyKind::Opaque(_, substs) => Some(
+                TyKind::FnDef(_, substs)
+                | TyKind::Alias(
+                    rustc_middle::ty::Opaque,
+                    rustc_middle::ty::AliasTy { substs, .. },
+                ) => Some(
                     self.type_visitor()
                         .specialize_substs(substs, &self.type_visitor().generic_argument_map),
                 ),

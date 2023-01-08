@@ -201,12 +201,12 @@ impl CallGraphNode {
 
     /// Extracts a function name from the DefId of a function.
     fn format_name(defid: DefId) -> Box<str> {
-        let tmp1 = format!("{:?}", defid);
+        let tmp1 = format!("{defid:?}");
         let tmp2: &str = tmp1.split("~ ").collect::<Vec<&str>>()[1];
         let tmp3 = tmp2.replace(')', "");
         let lhs = tmp3.split('[').collect::<Vec<&str>>()[0];
         let rhs = tmp3.split(']').collect::<Vec<&str>>()[1];
-        format!("{}{}", lhs, rhs).into_boxed_str()
+        format!("{lhs}{rhs}").into_boxed_str()
     }
 
     /// A node is excluded if its name does not include any
@@ -564,10 +564,7 @@ impl<'tcx> CallGraph<'tcx> {
             );
             self.update(graph)
         } else {
-            panic!(
-                "Failed to filter graph; could not find start node: {}",
-                name
-            );
+            panic!("Failed to filter graph; could not find start node: {name}");
         }
     }
 
@@ -748,7 +745,7 @@ impl<'tcx> CallGraph<'tcx> {
         for caps in type_regex.captures_iter(&s2) {
             let cap_type = &caps["type"];
             if !COLLECTION_TYPES.contains(&cap_type) {
-                base_types.push(format!("[{}]", cap_type).into_boxed_str());
+                base_types.push(format!("[{cap_type}]").into_boxed_str());
             }
         }
         base_types
@@ -898,7 +895,7 @@ impl<'tcx> CallGraph<'tcx> {
         let mut type_relations = HashSet::<TypeRelation>::new();
         // If there is no maximum element then the type map is empty
         // and we default to a starting ID of 0.
-        let mut max_id: u32 = *type_map.keys().into_iter().max().unwrap_or(&0);
+        let mut max_id: u32 = *type_map.keys().max().unwrap_or(&0);
         if let Some(path) = type_relations_path {
             let input_type_relations_raw: TypeRelationsRaw = match fs::read_to_string(path)
                 .map_err(|e| e.to_string())
@@ -906,7 +903,7 @@ impl<'tcx> CallGraph<'tcx> {
                     serde_json::from_str(&input_type_relations_str).map_err(|e| e.to_string())
                 }) {
                 Ok(relations) => relations,
-                Err(e) => panic!("Failed to read input type relations: {:?}", e),
+                Err(e) => panic!("Failed to read input type relations: {e:?}"),
             };
             let input_relations = input_type_relations_raw.relations;
             for relation in input_relations.iter() {
@@ -1028,7 +1025,7 @@ impl<'tcx> CallGraph<'tcx> {
         };
         match output_result {
             Ok(_) => (),
-            Err(e) => panic!("Failed to write ddlog output: {:?}", e),
+            Err(e) => panic!("Failed to write ddlog output: {e:?}"),
         }
         // Output the type map
         match serde_json::to_string_pretty(&TypeMapOutput { map: index_to_type })
@@ -1037,7 +1034,7 @@ impl<'tcx> CallGraph<'tcx> {
                 fs::write(type_map_path, type_map_output).map_err(|e| e.to_string())
             }) {
             Ok(_) => (),
-            Err(e) => panic!("Failed to write type map output: {:?}", e),
+            Err(e) => panic!("Failed to write type map output: {e:?}"),
         };
     }
 
@@ -1050,7 +1047,7 @@ impl<'tcx> CallGraph<'tcx> {
         );
         match fs::write(dot_path, output) {
             Ok(_) => (),
-            Err(e) => panic!("Failed to write dot file output: {:?}", e),
+            Err(e) => panic!("Failed to write dot file output: {e:?}"),
         };
     }
 
@@ -1062,7 +1059,7 @@ impl<'tcx> CallGraph<'tcx> {
                 fs::write(call_site_path, call_site_output).map_err(|e| e.to_string())
             }) {
             Ok(_) => (),
-            Err(e) => panic!("Failed to write call site output: {:?}", e),
+            Err(e) => panic!("Failed to write call site output: {e}"),
         };
     }
 

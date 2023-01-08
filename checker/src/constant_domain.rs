@@ -57,11 +57,11 @@ impl Debug for ConstantDomain {
         match self {
             ConstantDomain::Bottom => f.write_str("BOTTOM"),
             ConstantDomain::Char(ch) if (*ch as u32) == 0 => f.write_fmt(format_args!("'null'")),
-            ConstantDomain::Char(ch) => f.write_fmt(format_args!("'{}'", ch)),
+            ConstantDomain::Char(ch) => f.write_fmt(format_args!("'{ch}'")),
             ConstantDomain::False => f.write_str("false"),
             ConstantDomain::Function(func_ref) => {
                 if let Some(def_id) = func_ref.def_id {
-                    f.write_fmt(format_args!("{:?}", def_id))
+                    f.write_fmt(format_args!("{def_id:?}"))
                 } else {
                     f.write_fmt(format_args!(
                         "fn {}{}",
@@ -74,7 +74,7 @@ impl Debug for ConstantDomain {
             ConstantDomain::F32(val) => (f32::from_bits(*val)).fmt(f),
             ConstantDomain::Str(str_val) => str_val.fmt(f),
             ConstantDomain::True => f.write_str("true"),
-            ConstantDomain::U128(val) => f.write_fmt(format_args!("{}u", val)),
+            ConstantDomain::U128(val) => f.write_fmt(format_args!("{val}u")),
             ConstantDomain::Unit => f.write_str("()"),
             ConstantDomain::Unimplemented => f.write_str("unimplemented"),
         }

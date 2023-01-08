@@ -115,7 +115,7 @@ impl Options {
             &shellwords::split(s).unwrap_or_else(|e| {
                 early_error(
                     ErrorOutputType::default(),
-                    &format!("Cannot parse argument string: {:?}", e),
+                    &format!("Cannot parse argument string: {e:?}"),
                 )
             }),
             running_test_harness,
@@ -146,7 +146,7 @@ impl Options {
                 Err(e) => match e.kind() {
                     ErrorKind::DisplayHelp => {
                         // help is ambiguous, so display both MIRAI and rustc help.
-                        eprintln!("{}", e);
+                        eprintln!("{e}");
                         return args.to_vec();
                     }
                     ErrorKind::UnknownArgument => {
@@ -157,7 +157,7 @@ impl Options {
                         return args.to_vec();
                     }
                     _ => {
-                        eprintln!("{}", e);
+                        eprintln!("{e}");
                         e.exit();
                     }
                 },

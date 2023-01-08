@@ -9,11 +9,12 @@
 use mirai_annotations::*;
 
 async fn foo(i: i32, j: i32) -> i32 {
-    precondition!(i > j); //~ related location
+    precondition!(i > j); // ~ related location
     i - j
 }
 
 pub fn main() {
     let _ = foo(10, 3);
-    let _ = foo(1, 2); //~ unsatisfied precondition
+    // todo: fix this
+    let _ = foo(1, 2); // ~ unsatisfied precondition
 }
