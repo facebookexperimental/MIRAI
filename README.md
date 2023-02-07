@@ -3,6 +3,14 @@ MIRAI is an abstract interpreter for the [Rust](https://www.rust-lang.org/) comp
 representation](https://github.com/rust-lang/rfcs/blob/master/text/1211-mir.md) (MIR).
 It is intended to become a widely used static analysis tool for Rust.
 
+## Request for Proposals
+
+The Web3 Foundation has an 
+[RFP](https://github.com/w3f/Grants-Program/blob/master/docs/RFPs/Open/Static-Analysis-for-Runtime-Pallets.md) 
+for extending MIRAI. If you are interested in making a proposal, feel free to do so and expect to count on support
+with design reviews, coding and merging your contributions. Contact herman_venter@msn.com if you want to discuss this
+further.
+
 ## Who should use MIRAI
 
 MIRAI can be used as a linter that finds panics that may be unintentional or are not the best way to terminate a
