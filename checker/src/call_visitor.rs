@@ -108,7 +108,12 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
         func_args: &Option<Rc<Vec<Rc<FunctionReference>>>>,
         initial_type_cache: &Option<Rc<HashMap<Rc<Path>, Ty<'tcx>>>>,
     ) -> Summary {
-        let func_type = self.block_visitor.bv.tcx.type_of(self.callee_def_id);
+        let func_type = self
+            .block_visitor
+            .bv
+            .tcx
+            .type_of(self.callee_def_id)
+            .skip_binder();
         trace!("summarizing {:?}: {:?}", self.callee_def_id, func_type);
         let tcx = self.block_visitor.bv.tcx;
         if tcx.is_mir_available(self.callee_def_id) {
@@ -201,7 +206,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             trace!(
                 "devirtualize resolving def_id {:?}: {:?}",
                 self.callee_def_id,
-                tcx.type_of(self.callee_def_id)
+                tcx.type_of(self.callee_def_id).skip_binder()
             );
             trace!("devirtualize resolving func_ref {:?}", self.callee_func_ref,);
             trace!("gen_args {:?}", gen_args);
@@ -213,7 +218,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                     return;
                 }
             }
-            let abi = tcx.type_of(self.callee_def_id).fn_sig(tcx).abi();
+            let abi = tcx
+                .type_of(self.callee_def_id)
+                .skip_binder()
+                .fn_sig(tcx)
+                .abi();
             let resolved_instance = if abi == rustc_target::spec::abi::Abi::Rust {
                 Some(rustc_middle::ty::Instance::resolve(
                     tcx,
@@ -232,7 +241,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                     return;
                 }
                 self.callee_def_id = resolved_def_id;
-                let resolved_ty = tcx.type_of(resolved_def_id);
+                let resolved_ty = tcx.type_of(resolved_def_id).skip_binder();
                 let resolved_map = self.type_visitor().get_generic_arguments_map(
                     resolved_def_id,
                     instance.substs,

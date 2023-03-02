@@ -205,9 +205,7 @@ impl<'fixed, 'analysis, 'compilation, 'tcx>
         let old_state = self.out_state.clone();
         for bb in blocks {
             check_for_early_break!(self.bv);
-            if !self.already_visited.contains(&bb)
-                && self.dominators.is_dominated_by(bb, loop_anchor)
-            {
+            if !self.already_visited.contains(&bb) && self.dominators.dominates(loop_anchor, bb) {
                 last_block = bb;
                 // Visit the next block, or the entire nested loop anchored by it.
                 if bb == loop_anchor {
@@ -250,7 +248,7 @@ impl<'fixed, 'analysis, 'compilation, 'tcx>
                 .filter_map(|pred_bb| {
                     // If the predecessor can only be reached via bb then bb and pred_bb are
                     // part of the loop body.
-                    let is_loop_back = self.dominators.is_dominated_by(*pred_bb, bb);
+                    let is_loop_back = self.dominators.dominates(bb, *pred_bb);
                     if iteration_count == 1 && is_loop_back {
                         // For the first iteration of the loop body we only want state that
                         // precedes the body. Normally, the state of a block that is part of the
@@ -353,7 +351,7 @@ fn add_predecessors_then_root_block<'tcx>(
         if already_added.contains(pred_bb) {
             continue;
         };
-        if dominators.is_dominated_by(*pred_bb, root_block) {
+        if dominators.dominates(root_block, *pred_bb) {
             // pred_bb has still to be added, so it has a greater index than root_block, making root_block the loop anchor.
             //todo: checked_assume!(root_block.index() < pred_bb.index());
             // Root block has a smaller index than pred_bb because it has not already been added.

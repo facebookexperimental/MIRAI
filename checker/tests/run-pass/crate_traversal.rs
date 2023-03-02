@@ -159,8 +159,12 @@ pub fn test11(arr: &[String]) {
 }
 
 #[allow(arithmetic_overflow)]
+fn test12a(i: u8) {
+    let x = 200u8 * i; //~ related location
+}
+
 pub fn test12() {
-    let x = 200u8 * 4; //~ attempt to multiply with overflow
+    test12a(4); //~ attempt to multiply with overflow
 }
 
 fn test13(a: i32, b: i32) -> Option<i32> {

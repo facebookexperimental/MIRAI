@@ -27,7 +27,6 @@ use crate::constant_domain::ConstantDomain;
 use crate::environment::Environment;
 use crate::expression::{Expression, ExpressionType};
 use crate::path::{Path, PathEnum, PathRefinement, PathRoot, PathSelector};
-use crate::rustc_middle::ty::DefIdTree;
 use crate::{type_visitor, utils};
 
 #[derive(Debug)]
@@ -180,8 +179,10 @@ impl<'tcx> TypeVisitor<'tcx> {
                 rustc_middle::ty::AliasTy { def_id, substs, .. },
             ) => {
                 let map = self.get_generic_arguments_map(*def_id, substs, &[]);
-                let path_ty =
-                    self.specialize_generic_argument_type(self.tcx.type_of(*def_id), &map);
+                let path_ty = self.specialize_generic_argument_type(
+                    self.tcx.type_of(*def_id).skip_binder(),
+                    &map,
+                );
                 self.add_any_closure_fields_for(&path_ty, path, first_state);
             }
             TyKind::Dynamic(..) | TyKind::FnDef(..) | TyKind::FnPtr(..) => {}
@@ -253,6 +254,16 @@ impl<'tcx> TypeVisitor<'tcx> {
         } else {
             self.tcx.types.never
         }
+    }
+
+    pub fn is_empty_struct(&self, ty_kind: &TyKind<'tcx>) -> bool {
+        if let TyKind::Adt(def, ..) = ty_kind {
+            if !def.is_enum() && !def.is_union() {
+                let variant = &def.variants()[VariantIdx::new(0)];
+                return variant.fields.is_empty();
+            }
+        }
+        false
     }
 
     #[logfn_inputs(TRACE)]
@@ -328,7 +339,7 @@ impl<'tcx> TypeVisitor<'tcx> {
                 Expression::CompileTimeConstant(c) => {
                     if let ConstantDomain::Function(fr) = c {
                         if let Some(def_id) = fr.def_id {
-                            return self.tcx.type_of(def_id);
+                            return self.tcx.type_of(def_id).skip_binder();
                         }
                     }
                     c.get_rustc_type(self.tcx)
@@ -440,8 +451,10 @@ impl<'tcx> TypeVisitor<'tcx> {
                         ) = &t.kind()
                         {
                             let map = self.get_generic_arguments_map(*def_id, substs, &[]);
-                            t = self
-                                .specialize_generic_argument_type(self.tcx.type_of(*def_id), &map);
+                            t = self.specialize_generic_argument_type(
+                                self.tcx.type_of(*def_id).skip_binder(),
+                                &map,
+                            );
                             trace!("opaque type_of {:?}", t.kind());
                             trace!("opaque type_of {:?}", t);
                         }
@@ -483,7 +496,7 @@ impl<'tcx> TypeVisitor<'tcx> {
                                 let mut tuple_types =
                                     substs.as_generator().state_tys(*def_id, self.tcx);
                                 if let Some(field_tys) = tuple_types.nth(*ordinal) {
-                                    return self.tcx.mk_tup(field_tys);
+                                    return self.tcx.mk_tup_from_iter(field_tys);
                                 }
                                 info!("generator field not found {:?} {:?}", def_id, ordinal);
                                 return self.tcx.types.never;
@@ -574,7 +587,7 @@ impl<'tcx> TypeVisitor<'tcx> {
                     PathSelector::Discriminant => {
                         return self.tcx.types.i32;
                     }
-                    PathSelector::Downcast(_, ordinal) => {
+                    PathSelector::Downcast(_, ordinal, _) => {
                         // Down casting to an enum variant
                         if t == self.tcx.types.usize {
                             // Down casting from an untyped pointer. This happens often enough
@@ -597,7 +610,7 @@ impl<'tcx> TypeVisitor<'tcx> {
                                     let variant = &def.variants()[VariantIdx::new(*ordinal)];
                                     let field_tys =
                                         variant.fields.iter().map(|fd| fd.ty(self.tcx, substs));
-                                    return self.tcx.mk_tup(field_tys);
+                                    return self.tcx.mk_tup_from_iter(field_tys);
                                 }
                                 if !type_visitor::is_transparent_wrapper(t) {
                                     break;
@@ -641,7 +654,7 @@ impl<'tcx> TypeVisitor<'tcx> {
             }
             PathEnum::StaticVariable { def_id, .. } => {
                 if let Some(def_id) = def_id {
-                    return self.tcx.type_of(*def_id);
+                    return self.tcx.type_of(*def_id).skip_binder();
                 }
                 info!(
                     "static variable path.value is {:?} at {:?}",
@@ -777,7 +790,7 @@ impl<'tcx> TypeVisitor<'tcx> {
                 }
                 map.insert(param_def.name, specialized_gen_arg);
             } else {
-                debug!("unmapped generic param def");
+                debug!("unmapped generic param def {:?}", param_def);
             }
             self.tcx.mk_param_from_def(param_def) // not used
         });
@@ -924,15 +937,15 @@ impl<'tcx> TypeVisitor<'tcx> {
                             );
                             let variant = &def.variants().iter().last().unwrap();
                             let field_tys = variant.fields.iter().map(|fd| fd.ty(self.tcx, substs));
-                            return self.tcx.mk_tup(field_tys);
+                            return self.tcx.mk_tup_from_iter(field_tys);
                         }
                         let variant = &def.variants()[*ordinal];
                         let field_tys = variant.fields.iter().map(|fd| fd.ty(self.tcx, substs));
-                        return self.tcx.mk_tup(field_tys);
+                        return self.tcx.mk_tup_from_iter(field_tys);
                     } else if let TyKind::Generator(def_id, substs, ..) = base_ty.kind() {
                         let mut tuple_types = substs.as_generator().state_tys(*def_id, self.tcx);
                         if let Some(field_tys) = tuple_types.nth(ordinal.index()) {
-                            return self.tcx.mk_tup(field_tys);
+                            return self.tcx.mk_tup_from_iter(field_tys);
                         }
                         debug!(
                             "illegally down casting to index {} of {:?} at {:?}",
@@ -991,7 +1004,7 @@ impl<'tcx> TypeVisitor<'tcx> {
                 let variant_0 = VariantIdx::from_u32(0);
                 let v = &def.variants()[variant_0];
                 let non_zst_field = v.fields.iter().find(|field| {
-                    let field_ty = self.tcx.type_of(field.did);
+                    let field_ty = self.tcx.type_of(field.did).skip_binder();
                     let is_zst = self
                         .layout_of(field_ty)
                         .map_or(false, |layout| layout.is_zst());
@@ -1059,7 +1072,7 @@ impl<'tcx> TypeVisitor<'tcx> {
                             .tcx
                             .mk_projection(projection.def_id, specialized_substs);
                     }
-                    let item_type = self.tcx.type_of(instance_item_def_id);
+                    let item_type = self.tcx.type_of(instance_item_def_id).skip_binder();
                     let map =
                         self.get_generic_arguments_map(instance_item_def_id, instance.substs, &[]);
                     if item_type == gen_arg_type && map.is_none() {
@@ -1098,7 +1111,7 @@ impl<'tcx> TypeVisitor<'tcx> {
                 let specialized_elem_ty = self.specialize_generic_argument_type(*elem_ty, map);
                 let specialized_len = self.specialize_const(*len, map);
                 self.tcx
-                    .mk_ty(TyKind::Array(specialized_elem_ty, specialized_len))
+                    .mk_ty_from_kind(TyKind::Array(specialized_elem_ty, specialized_len))
             }
             TyKind::Slice(elem_ty) => {
                 let specialized_elem_ty = self.specialize_generic_argument_type(*elem_ty, map);
@@ -1126,7 +1139,7 @@ impl<'tcx> TypeVisitor<'tcx> {
                 .mk_fn_def(*def_id, self.specialize_substs(substs, map)),
             TyKind::FnPtr(fn_sig) => {
                 let map_fn_sig = |fn_sig: FnSig<'tcx>| {
-                    let specialized_inputs_and_output = self.tcx.mk_type_list(
+                    let specialized_inputs_and_output = self.tcx.mk_type_list_from_iter(
                         fn_sig
                             .inputs_and_output
                             .iter()
@@ -1177,7 +1190,7 @@ impl<'tcx> TypeVisitor<'tcx> {
                 );
                 self.tcx.mk_dynamic(
                     self.tcx
-                        .mk_poly_existential_predicates(specialized_predicates),
+                        .mk_poly_existential_predicates_from_iter(specialized_predicates),
                     *region,
                     *kind,
                 )
@@ -1209,7 +1222,7 @@ impl<'tcx> TypeVisitor<'tcx> {
             }
             TyKind::GeneratorWitness(bound_types) => {
                 let map_types = |types: &rustc_middle::ty::List<Ty<'tcx>>| {
-                    self.tcx.mk_type_list(
+                    self.tcx.mk_type_list_from_iter(
                         types
                             .iter()
                             .map(|ty| self.specialize_generic_argument_type(ty, map)),
@@ -1218,7 +1231,7 @@ impl<'tcx> TypeVisitor<'tcx> {
                 let specialized_types = bound_types.map_bound(map_types);
                 self.tcx.mk_generator_witness(specialized_types)
             }
-            TyKind::Tuple(types) => self.tcx.mk_tup(
+            TyKind::Tuple(types) => self.tcx.mk_tup_from_iter(
                 types
                     .iter()
                     .map(|ty| self.specialize_generic_argument_type(ty, map)),
@@ -1251,7 +1264,7 @@ impl<'tcx> TypeVisitor<'tcx> {
             .iter()
             .map(|gen_arg| self.specialize_generic_argument(gen_arg, map))
             .collect();
-        self.tcx.intern_substs(&specialized_generic_args)
+        self.tcx.mk_substs(&specialized_generic_args)
     }
 }
 

@@ -20,7 +20,7 @@ use rustc_middle::mir;
 use rustc_middle::ty::subst::SubstsRef;
 use rustc_middle::ty::{AdtDef, Const, Ty, TyCtxt, TyKind, TypeAndMut, UintTy};
 
-use crate::abstract_value::{self, AbstractValue, AbstractValueTrait};
+use crate::abstract_value::{self, AbstractValue, AbstractValueTrait, BOTTOM};
 use crate::block_visitor::BlockVisitor;
 use crate::call_visitor::CallVisitor;
 use crate::constant_domain::ConstantDomain;
@@ -190,6 +190,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
         if cfg!(DEBUG) {
             utils::pretty_print_mir(self.tcx, self.def_id);
         }
+        debug!("entered body of {:?}", self.def_id);
         *self.active_calls_map.entry(self.def_id).or_insert(0) += 1;
         let saved_heap_counter = self.cv.constant_value_cache.swap_heap_counter(0);
 
@@ -637,7 +638,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
             } else {
                 None
             };
-            let ty = self.tcx.type_of(def_id);
+            let ty = self.tcx.type_of(def_id).skip_binder();
             let func_const = self
                 .cv
                 .constant_value_cache
@@ -2419,7 +2420,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
     pub fn get_array_length(&self, length: &'tcx Const<'tcx>) -> usize {
         let param_env = self.type_visitor().get_param_env();
         length
-            .try_eval_usize(self.tcx, param_env)
+            .try_eval_target_usize(self.tcx, param_env)
             .expect("Array length constant to have a known value") as usize
     }
 
@@ -2477,6 +2478,10 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
             }
             update(self, target_path.clone(), value.clone());
         }
+        if let Expression::CompileTimeConstant(ConstantDomain::Function(..)) = &value.expression {
+            let target_path = Path::new_function(target_path.clone());
+            update(self, target_path, value.clone());
+        }
         let target_type = ExpressionType::from(root_rustc_type.kind());
         let mut no_children = true;
         // If a non primitive parameter is just returned from a function, for example,
@@ -2518,6 +2523,14 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 if path.is_rooted_by_parameter() {
                     update(self, target_path.clone(), value.clone());
                     no_children = false;
+                } else if no_children && self.type_visitor.is_empty_struct(root_rustc_type.kind()) {
+                    // Add a dummy field so that we don't end up with an unknown local var
+                    // as the value of any target that target_path may get copied or moved to.
+                    // That is problematic because an empty struct is a compile time constant
+                    // and not an unknown value.
+                    let field_path = Path::new_field(target_path, 0);
+                    update(self, field_path, Rc::new(BOTTOM));
+                    return;
                 }
             }
         }

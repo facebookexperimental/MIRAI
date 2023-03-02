@@ -103,6 +103,9 @@ pub const TOP: AbstractValue = make_value(Expression::Top);
 /// An abstract domain element that all represent the single concrete value, true.
 pub const TRUE: AbstractValue = make_value(Expression::CompileTimeConstant(ConstantDomain::True));
 
+/// An abstract domain element that all represent an empty tuple or empty struct.
+pub const UNIT: AbstractValue = make_value(Expression::CompileTimeConstant(ConstantDomain::Unit));
+
 /// An abstract domain element that represents a dummy untagged value.
 /// It is only used as the default value for the tag field of non-scalar values.
 pub const DUMMY_UNTAGGED_VALUE: AbstractValue =

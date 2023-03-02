@@ -84,10 +84,11 @@ pub struct Options {
 }
 
 /// Represents diag level.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, PartialOrd)]
 pub enum DiagLevel {
     /// When a function calls a function without a body and with no foreign function summary, the call assumed to be
     /// correct and any diagnostics that depend on the result of the call in some way are suppressed.
+    #[default]
     Default,
     /// Like Default, but emit a diagnostic if there is a call to a function without a body and with no foreign function summary.
     Verify,
@@ -98,12 +99,6 @@ pub enum DiagLevel {
     // Like Library, but also carries on analysis of functions after a call to an incompletely
     // analyzed function has been encountered.
     Paranoid,
-}
-
-impl Default for DiagLevel {
-    fn default() -> Self {
-        DiagLevel::Default
-    }
 }
 
 impl Options {

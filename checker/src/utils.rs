@@ -17,7 +17,7 @@ use rustc_hir::Node;
 use rustc_middle::ty;
 use rustc_middle::ty::print::{FmtPrinter, Printer};
 use rustc_middle::ty::subst::{GenericArgKind, SubstsRef};
-use rustc_middle::ty::{DefIdTree, FloatTy, IntTy, Ty, TyCtxt, TyKind, UintTy};
+use rustc_middle::ty::{FloatTy, IntTy, Ty, TyCtxt, TyKind, UintTy};
 
 /// Returns the location of the rust system binaries that are associated with this build of Mirai.
 /// The location is obtained by looking at the contents of the environmental variables that were
@@ -50,7 +50,7 @@ pub fn find_sysroot() -> String {
 /// information from its calling context.
 #[logfn(TRACE)]
 pub fn is_higher_order_function(def_id: DefId, tcx: TyCtxt<'_>) -> bool {
-    let fn_ty = tcx.type_of(def_id);
+    let fn_ty = tcx.type_of(def_id).skip_binder();
     if fn_ty.is_fn() {
         let fn_sig = fn_ty.fn_sig(tcx).skip_binder();
         for param_ty in fn_sig.inputs() {
@@ -388,10 +388,10 @@ pub fn summary_key_str(tcx: TyCtxt<'_>, def_id: DefId) -> Rc<str> {
                     | DefKind::Enum
                     | DefKind::Variant
                     | DefKind::TyAlias
-                    | DefKind::Impl
+                    | DefKind::Impl { .. },
             ) {
                 name.push('_');
-                append_mangled_type(&mut name, tcx.type_of(parent_def_id), tcx);
+                append_mangled_type(&mut name, tcx.type_of(parent_def_id).skip_binder(), tcx);
             }
         }
     }
@@ -441,7 +441,7 @@ fn push_component_name(component_data: DefPathData, target: &mut String) {
 pub fn def_id_as_qualified_name_str(tcx: TyCtxt<'_>, def_id: DefId) -> Rc<str> {
     let mut name = format!("/{}/", crate_name(tcx, def_id));
     name.push_str(&tcx.def_path_str(def_id));
-    let fn_ty = tcx.type_of(def_id);
+    let fn_ty = tcx.type_of(def_id).skip_binder();
     if fn_ty.is_fn() {
         name.push('(');
         let fn_sig = fn_ty.fn_sig(tcx).skip_binder();

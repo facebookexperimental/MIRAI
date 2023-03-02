@@ -596,7 +596,7 @@ impl Path {
 
     /// Creates a path to the static defined by def_id.
     pub fn new_static(tcx: TyCtxt<'_>, def_id: DefId) -> Rc<Path> {
-        let ty = tcx.type_of(def_id);
+        let ty = tcx.type_of(def_id).skip_binder();
         let name = utils::summary_key_str(tcx, def_id);
         Rc::new(
             PathEnum::StaticVariable {
@@ -979,16 +979,12 @@ impl PathRefinement for Rc<Path> {
                 }
             }
             // An impossible downcast is equivalent to BOTTOM
-            if let PathSelector::Downcast(_, variant) = selector.as_ref() {
+            if let PathSelector::Downcast(_, _, discr_val) = selector.as_ref() {
                 let discriminator = Path::new_discriminant(canonical_qualifier.clone());
                 if let Some(val) = environment.value_at(&discriminator) {
-                    if let Expression::CompileTimeConstant(ConstantDomain::U128(ordinal)) =
-                        &val.expression
-                    {
-                        if (*variant as u128) != *ordinal {
-                            // The downcast is impossible in this calling context
-                            return Path::new_computed(Rc::new(abstract_value::BOTTOM));
-                        }
+                    if val.is_compile_time_constant() && val.ne(discr_val) {
+                        // The downcast is impossible in this calling context
+                        return Path::new_computed(Rc::new(abstract_value::BOTTOM));
                     }
                 }
             }
@@ -1189,8 +1185,9 @@ pub enum PathSelector {
     ConstantSlice { from: u64, to: u64, from_end: bool },
 
     /// "Downcast" to a variant of an ADT. Currently, MIR only introduces
-    /// this for ADTs with more than one variant. The value is the ordinal of the variant.
-    Downcast(Rc<str>, usize),
+    /// this for ADTs with more than one variant. The usize value is the ordinal of the variant.
+    /// The constant value is the tag value that corresponds to the variant.
+    Downcast(Rc<str>, usize, Rc<AbstractValue>),
 
     /// Select the struct model field with the given name.
     /// A model field is a specification construct used during MIRAI verification
@@ -1233,7 +1230,9 @@ impl Debug for PathSelector {
             PathSelector::ConstantSlice { from, to, from_end } => {
                 f.write_fmt(format_args!("[{from} : {to}, from_end: {from_end}]"))
             }
-            PathSelector::Downcast(name, index) => f.write_fmt(format_args!("as {name}({index})")),
+            PathSelector::Downcast(name, index, val) => {
+                f.write_fmt(format_args!("as {name}({index}, {val:?})"))
+            }
             PathSelector::ModelField(name) => name.fmt(f),
             PathSelector::TagField => f.write_str("$tag"),
         }

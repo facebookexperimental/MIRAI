@@ -48,15 +48,16 @@ pub mod propagation_on_empty_struct {
     }
 
     pub fn test3_constant() {
-        // Marking FOO to be a constant makes sure that the Rust compiler does not make up a new
-        // constant for the call.
         const FOO: Foo = Foo {};
         add_tag!(&FOO, SecretTaint);
-        call3(FOO);
+        // Sadly, the next call is compiled by Rust with an argument that constructs a new empty struct.
+        // Thus the tag added above is not present on the actual argument and the precondition fails.
+        call3(FOO); //~unsatisfied precondition
     }
 
     fn call3(foo: Foo) {
         precondition!(has_tag!(&foo, SecretTaint)); //~related location
+                                                    //~related location
     }
 
     pub fn test4() {

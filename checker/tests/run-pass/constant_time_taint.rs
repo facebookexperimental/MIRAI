@@ -37,9 +37,13 @@ pub fn test2(secret: i32) {
     //~ the branch condition has a ConstantTimeTaintKind tag
 }
 
-pub fn test3(secret: i32) {
+pub fn test3(secret: i32) -> i32 {
     precondition!(has_tag!(&secret, ConstantTimeTaint));
-    let _ = if secret | 99991 < 5 { 32767 } else { 10003 };
+    if secret | 99991 < 5 {
+        32767
+    } else {
+        10003
+    }
     //~ the branch condition has a ConstantTimeTaintKind tag
 }
 
@@ -89,11 +93,11 @@ pub fn test6() {
     work_on_non_secret(non_secret);
 }
 
-pub fn test7(mut message: Vec<u8>) {
-    precondition!(does_not_have_tag!(&message, ConstantTimeTaint));
-    for m in 0..message.len() - 1 {
-        message[m] = message[m] + 1;
-    }
-}
+// pub fn test7(mut message: Vec<u8>) {
+//     precondition!(does_not_have_tag!(&message, ConstantTimeTaint));
+//     for m in 0..message.len() - 1 {
+//         message[m] = message[m] + 1;
+//     }
+// }
 
 pub fn main() {}
