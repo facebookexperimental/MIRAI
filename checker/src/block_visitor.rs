@@ -23,8 +23,7 @@ use rustc_middle::ty::{
 use rustc_target::abi::{Primitive, TagEncoding, VariantIdx, Variants};
 
 use crate::abstract_value;
-use crate::abstract_value::AbstractValue;
-use crate::abstract_value::AbstractValueTrait;
+use crate::abstract_value::{AbstractValue, AbstractValueTrait, BOTTOM};
 use crate::body_visitor::BodyVisitor;
 use crate::call_visitor::CallVisitor;
 use crate::constant_domain::{ConstantDomain, FunctionReference};
@@ -116,6 +115,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             mir::StatementKind::Assign(box (place, rvalue)) => {
                 self.visit_assign(place, rvalue.borrow())
             }
+            mir::StatementKind::ConstEvalCounter => (),
             mir::StatementKind::FakeRead(..) => assume_unreachable!(),
             mir::StatementKind::SetDiscriminant {
                 place,
@@ -501,7 +501,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     callee_generic_arguments,
                     &actual_argument_types,
                 );
-                let fun_ty = self.bv.tcx.type_of(destructor.did);
+                let fun_ty = self.bv.tcx.type_of(destructor.did).skip_binder();
                 let func_const = self
                     .visit_function_reference(destructor.did, fun_ty, Some(substs))
                     .clone();
@@ -669,7 +669,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         // function was visited, so the cached specialized generic argument list created there
         // might not be specialized enough.
         if !actual_argument_types.is_empty() && !utils::are_concrete(callee_generic_arguments) {
-            let fty = self.bv.tcx.type_of(callee_def_id);
+            let fty = self.bv.tcx.type_of(callee_def_id).skip_binder();
             if let TyKind::FnDef(_, substs) = fty.kind() {
                 for (i, generic_ty_arg) in substs.types().enumerate() {
                     if let TyKind::Param(t_par) = generic_ty_arg.kind() {
@@ -680,7 +680,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                                 .type_visitor()
                                 .get_dereferenced_type(actual_argument_types[0])
                                 .into();
-                            callee_generic_arguments = self.bv.tcx.intern_substs(&gen_args);
+                            callee_generic_arguments = self.bv.tcx.mk_substs(&gen_args);
                             break;
                         }
                     }
@@ -779,7 +779,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 &value.expression
             {
                 let ty = if let Some(def_id) = func_ref.def_id {
-                    self.bv.tcx.type_of(def_id)
+                    self.bv.tcx.type_of(def_id).skip_binder()
                 } else {
                     self.type_visitor()
                         .get_path_rustc_type(path, self.bv.current_span)
@@ -1011,7 +1011,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         .type_visitor()
                         .specialize_substs(substs, &self.type_visitor().generic_argument_map);
                     self.bv.cv.substs_cache.insert(*def_id, substs);
-                    let closure_ty = self.bv.tcx.type_of(*def_id);
+                    let closure_ty = self.bv.tcx.type_of(*def_id).skip_binder();
                     let map = self
                         .type_visitor()
                         .get_generic_arguments_map(*def_id, substs, &[]);
@@ -1182,7 +1182,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             match (self.bv.post_condition.clone(), self.bv.post_condition_block) {
                 (Some(last_cond), Some(last_block)) => {
                     let dominators = self.bv.mir.basic_blocks.dominators();
-                    if dominators.is_dominated_by(this_block, last_block) {
+                    if dominators.dominates(last_block, this_block) {
                         // We can extend the last condition as all paths to this condition
                         // lead over it
                         self.bv.post_condition = Some(last_cond.and(promotable_condition));
@@ -1705,8 +1705,8 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             mir::Rvalue::Discriminant(place) => {
                 self.visit_discriminant(path, place);
             }
-            mir::Rvalue::Aggregate(aggregate_kinds, operands) => {
-                self.visit_aggregate(path, aggregate_kinds, operands);
+            mir::Rvalue::Aggregate(aggregate_kind, operands) => {
+                self.visit_aggregate(path, aggregate_kind, operands);
             }
             mir::Rvalue::ShallowInitBox(operand, ty) => {
                 self.visit_shallow_init_box(path, operand, *ty);
@@ -2100,6 +2100,13 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                                 .set_path_rustc_type(path.clone(), source_type);
                         }
                     }
+                    if self.type_visitor().is_slice_pointer(ty.kind()) {
+                        let source_type = self
+                            .type_visitor()
+                            .get_path_rustc_type(&source_path, self.bv.current_span);
+                        let value = self.bv.lookup_path_and_refine_result(source_path.clone(), source_type);
+                        self.convert_sized_array_pointer_to_unsized_pointer(&source_path, &value, &path)
+                    }
                     for (p, value) in value_map
                         .iter()
                         .filter(|(p, _)| source_path == **p || p.is_rooted_by(&source_path))
@@ -2115,28 +2122,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                                 .type_visitor()
                                 .get_path_rustc_type(&target_path, self.bv.current_span);
                             if self.type_visitor().is_slice_pointer(target_type.kind()) {
-                                // convert the source thin pointer to a fat pointer if the target path is a slice pointer
-                                let thin_pointer_path = Path::new_field(target_path.clone(), 0);
-                                self.bv.update_value_at(thin_pointer_path, value.clone());
-                                let source_type = self
-                                    .type_visitor()
-                                    .get_path_rustc_type(p, self.bv.current_span);
-                                // Now write the length alongside the thin pointer
-                                if let TyKind::Array(_, len) = self
-                                    .type_visitor()
-                                    .get_dereferenced_type(source_type)
-                                    .kind()
-                                {
-                                    let length_path = target_path
-                                        .add_or_replace_selector(Rc::new(PathSelector::Field(1)));
-                                    let length_value = self.visit_const(len);
-                                    self.bv.update_value_at(length_path, length_value);
-                                } else {
-                                    assume_unreachable!(
-                                        "non array thin pointer type {:?}",
-                                        source_type
-                                    );
-                                }
+                                self.convert_sized_array_pointer_to_unsized_pointer(p, value, &target_path)
                             } else {
                                 // just copy
                                 self.bv.update_value_at(target_path, value.clone());
@@ -2145,7 +2131,10 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     }
                     return;
                 }
-                let source_path = self.visit_rh_place(place);
+                let mut source_path = self.visit_rh_place(place);
+                if matches!(cast_kind, mir::CastKind::Pointer(PointerCast::ClosureFnPointer(_))){
+                    source_path = Path::new_function(source_path)
+                }
                 self.bv
                     .copy_or_move_elements(path, source_path, ty, is_move);
             }
@@ -2198,6 +2187,31 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     self.bv.update_value_at(path, result);
                 }
             }
+        }
+    }
+
+    fn convert_sized_array_pointer_to_unsized_pointer(
+        &mut self,
+        p: &Rc<Path>,
+        value: &Rc<AbstractValue>,
+        target_path: &Rc<Path>,
+    ) {
+        let thin_pointer_path = Path::new_field(target_path.clone(), 0);
+        self.bv.update_value_at(thin_pointer_path, value.clone());
+        let source_type = self
+            .type_visitor()
+            .get_path_rustc_type(p, self.bv.current_span);
+        // Now write the length alongside the thin pointer
+        if let TyKind::Array(_, len) = self
+            .type_visitor()
+            .get_dereferenced_type(source_type)
+            .kind()
+        {
+            let length_path = target_path.add_or_replace_selector(Rc::new(PathSelector::Field(1)));
+            let length_value = self.visit_const(len);
+            self.bv.update_value_at(length_path, length_value);
+        } else {
+            assume_unreachable!("non array thin pointer type {:?}", source_type);
         }
     }
 
@@ -2360,25 +2374,109 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         self.bv.update_value_at(path, discriminant_value);
     }
 
-    /// Currently only survives in the MIR that MIRAI sees, if the aggregate is an array.
-    /// See https://github.com/rust-lang/rust/issues/48193.
-    /// Copies the values from the operands to the target path and sets the length field.
-    /// The target path identifies stack storage for the array and is not a fat pointer to the heap.
     #[logfn_inputs(TRACE)]
     fn visit_aggregate(
         &mut self,
         path: Rc<Path>,
-        aggregate_kinds: &mir::AggregateKind<'tcx>,
+        aggregate_kind: &mir::AggregateKind<'tcx>,
         operands: &[mir::Operand<'tcx>],
     ) {
-        precondition!(matches!(aggregate_kinds, mir::AggregateKind::Array(..)));
-        let length_path = Path::new_length(path.clone());
-        let length_value = self.get_u128_const_val(operands.len() as u128);
-        self.bv.update_value_at(length_path, length_value);
-        for (i, operand) in operands.iter().enumerate() {
-            let index_value = self.get_u128_const_val(i as u128);
-            let index_path = Path::new_index(path.clone(), index_value);
-            self.visit_used_operand(index_path, operand);
+        match aggregate_kind {
+            mir::AggregateKind::Array(ty) => {
+                let length_path = Path::new_length(path.clone());
+                let length_value = self.get_u128_const_val(operands.len() as u128);
+                self.bv.update_value_at(length_path, length_value);
+                for (i, operand) in operands.iter().enumerate() {
+                    let index_value = self.get_u128_const_val(i as u128);
+                    let index_path = Path::new_index(path.clone(), index_value);
+                    self.type_visitor_mut()
+                        .set_path_rustc_type(index_path.clone(), *ty);
+                    self.visit_use(index_path, operand);
+                }
+            }
+            mir::AggregateKind::Tuple => {
+                let ty = self
+                    .type_visitor()
+                    .get_path_rustc_type(&path, self.bv.current_span);
+                let types = if let TyKind::Tuple(types) = ty.kind() {
+                    types.as_slice()
+                } else {
+                    &[]
+                };
+                for (i, operand) in operands.iter().enumerate() {
+                    let index_path = Path::new_field(path.clone(), i);
+                    if let Some(ty) = types.get(i) {
+                        self.type_visitor_mut()
+                            .set_path_rustc_type(index_path.clone(), *ty);
+                    };
+                    self.visit_use(index_path, operand);
+                }
+            }
+            mir::AggregateKind::Adt(def, variant_idx, substs, _, case_index) => {
+                let mut path = path;
+                let adt_def = self.bv.tcx.adt_def(def);
+                let variant_def = &adt_def.variants()[*variant_idx];
+                let adt_ty = self.bv.tcx.type_of(def).skip_binder();
+                if adt_def.is_enum() {
+                    let discr_path = Path::new_discriminant(path.clone());
+                    let discr_ty = adt_ty.discriminant_ty(self.bv.tcx);
+                    let discr_bits =
+                        match adt_ty.discriminant_for_variant(self.bv.tcx, *variant_idx) {
+                            Some(discr) => discr.val,
+                            None => variant_idx.as_usize() as u128,
+                        };
+                    let val = self.get_int_const_val(discr_bits, discr_ty);
+                    self.bv.update_value_at(discr_path, val.clone());
+                    let discr_name = variant_def.name.to_string();
+                    path = Path::new_qualified(
+                        path,
+                        Rc::new(PathSelector::Downcast(
+                            Rc::from(discr_name),
+                            variant_idx.as_usize(),
+                            val,
+                        )),
+                    );
+                } else if adt_def.is_union() {
+                    let num_cases = variant_def.fields.len();
+                    let case_index = case_index.unwrap_or(0);
+                    let field_path = Path::new_union_field(path, case_index, num_cases);
+                    let field = &variant_def.fields[case_index];
+                    let field_ty = field.ty(self.bv.tcx, substs);
+                    self.type_visitor_mut()
+                        .set_path_rustc_type(field_path.clone(), field_ty);
+                    self.visit_use(field_path, &operands[0]);
+                    return;
+                }
+                if variant_def.fields.is_empty() {
+                    self.bv
+                        .update_value_at(Path::new_field(path.clone(), 0), Rc::new(BOTTOM));
+                }
+                for (i, field) in variant_def.fields.iter().enumerate() {
+                    let field_path = Path::new_field(path.clone(), i);
+                    let field_ty = field.ty(self.bv.tcx, substs);
+                    self.type_visitor_mut()
+                        .set_path_rustc_type(field_path.clone(), field_ty);
+                    if let Some(operand) = operands.get(i) {
+                        self.visit_use(field_path, operand);
+                    } else {
+                        debug!(
+                            "variant has more fields than was serialized {:?}",
+                            variant_def
+                        );
+                    }
+                }
+            }
+            mir::AggregateKind::Closure(def_id, substs)
+            | mir::AggregateKind::Generator(def_id, substs, _) => {
+                let ty = self.bv.tcx.type_of(*def_id).skip_binder();
+                let func_const = self.visit_function_reference(*def_id, ty, Some(substs));
+                let func_val = Rc::new(func_const.clone().into());
+                self.bv.update_value_at(path.clone(), func_val);
+                for (i, operand) in operands.iter().enumerate() {
+                    let field_path = Path::new_field(path.clone(), i);
+                    self.visit_use(field_path, operand);
+                }
+            }
         }
     }
 
@@ -2401,27 +2499,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         self.type_visitor_mut()
             .set_path_rustc_type(value_path.clone(), ty);
         // todo: set value_path to boxed type
-        self.visit_used_operand(value_path, operand);
-    }
-
-    /// Operand defines the values that can appear inside an rvalue. They are intentionally
-    /// limited to prevent rvalues from being nested in one another.
-    /// A used operand must move or copy values to a target path.
-    #[logfn_inputs(TRACE)]
-    fn visit_used_operand(&mut self, target_path: Rc<Path>, operand: &mir::Operand<'tcx>) {
-        match operand {
-            mir::Operand::Copy(place) => {
-                self.visit_used_copy(target_path, place);
-            }
-            mir::Operand::Move(place) => {
-                self.visit_used_move(target_path, place);
-            }
-            mir::Operand::Constant(constant) => {
-                let mir::Constant { literal, .. } = constant.borrow();
-                let const_value = self.visit_literal(literal);
-                self.bv.update_value_at(target_path, const_value);
-            }
-        };
+        self.visit_use(value_path, operand);
     }
 
     /// Returns the path (location/lh-value) of the given operand.
@@ -2832,6 +2910,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
     /// everything else. The representation mirrors that of the actual runtime representation,
     /// presumably because these values are used and produced by MIRI.
     /// Sadly, this means that MIRAI has to have a lot of duplicated logic.
+    #[logfn_inputs(TRACE)]
     fn visit_const_value(&mut self, val: ConstValue<'tcx>, lty: Ty<'tcx>) -> Rc<AbstractValue> {
         match val {
             // The raw bytes of a simple value.
@@ -2902,7 +2981,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                             instance.substs,
                             &self.type_visitor().generic_argument_map,
                         );
-                        let fn_ty = self.bv.tcx.type_of(def_id);
+                        let fn_ty = self.bv.tcx.type_of(def_id).skip_binder();
                         self.bv.cv.substs_cache.insert(def_id, substs);
                         let fun_val = Rc::new(
                             self.bv
@@ -3061,19 +3140,28 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 if let Ok(enum_ty_layout) = self.type_visitor().layout_of(ty) {
                     trace!("enum_ty_layout {:?}", enum_ty_layout);
                     let len = bytes.len();
+                    let tag_length;
                     let data = if len < 2 {
+                        tag_length = 1;
                         bytes[0] as u128
                     } else if len < 4 {
+                        tag_length = 2;
                         u16::from_ne_bytes(*bytes.array_chunks().next().unwrap()) as u128
                     } else if len < 8 {
+                        tag_length = 4;
                         u32::from_ne_bytes(*bytes.array_chunks().next().unwrap()) as u128
                     } else if len < 16 {
+                        tag_length = 8;
                         u64::from_ne_bytes(*bytes.array_chunks().next().unwrap()) as u128
                     } else {
+                        tag_length = 16;
                         u128::from_ne_bytes(*bytes.array_chunks().next().unwrap())
                     };
-                    let (discr_signed, discr_bits, discr_index, _discr_has_data) =
+                    let (discr_signed, discr_bits, discr_index, discr_has_data) =
                         self.get_discriminator_info(data, &enum_ty_layout);
+                    if !discr_has_data {
+                        bytes_left_to_deserialize = &bytes[tag_length..];
+                    }
                     let discr_path = Path::new_discriminant(target_path.clone());
                     let discr_data = if discr_signed {
                         self.get_i128_const_val(discr_bits as i128)
@@ -3081,22 +3169,24 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         self.get_u128_const_val(discr_bits)
                     };
                     self.bv.update_value_at(discr_path, discr_data);
-                    let variant = &def.variants()[discr_index];
-                    trace!("deserializing variant {:?}", variant);
-                    for (i, field) in variant.fields.iter().enumerate() {
-                        trace!("deserializing field({}) {:?}", i, field);
-                        trace!("bytes_left_deserialize {:?}", bytes_left_to_deserialize);
-                        let field_path = Path::new_field(target_path.clone(), i);
-                        let field_ty = field.ty(self.bv.tcx, substs);
-                        trace!(
-                            "field ty layout {:?}",
-                            self.type_visitor().layout_of(field_ty)
-                        );
-                        bytes_left_to_deserialize = self.deserialize_constant_bytes(
-                            field_path,
-                            bytes_left_to_deserialize,
-                            field_ty,
-                        );
+                    if discr_has_data {
+                        let variant = &def.variants()[discr_index];
+                        trace!("deserializing variant {:?}", variant);
+                        for (i, field) in variant.fields.iter().enumerate() {
+                            trace!("deserializing field({}) {:?}", i, field);
+                            trace!("bytes_left_deserialize {:?}", bytes_left_to_deserialize);
+                            let field_path = Path::new_field(target_path.clone(), i);
+                            let field_ty = field.ty(self.bv.tcx, substs);
+                            trace!(
+                                "field ty layout {:?}",
+                                self.type_visitor().layout_of(field_ty)
+                            );
+                            bytes_left_to_deserialize = self.deserialize_constant_bytes(
+                                field_path,
+                                bytes_left_to_deserialize,
+                                field_ty,
+                            );
+                        }
                     }
                 }
                 bytes_left_to_deserialize
@@ -3390,7 +3480,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             } else {
                 self.get_u128_const_val(discr_bits)
             };
-            self.bv.update_value_at(discr_path, discr_data);
+            self.bv.update_value_at(discr_path, discr_data.clone());
 
             if discr_has_data {
                 use std::ops::Deref;
@@ -3412,6 +3502,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         Rc::new(PathSelector::Downcast(
                             Rc::from(name_str.deref()),
                             discr_index.as_usize(),
+                            discr_data,
                         )),
                     ),
                     0,
@@ -3476,50 +3567,32 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 ..
             } => {
                 // The enum contains multiple (more than one) variants.
-
-                // The discriminant tag can be defined explicitly, and it can be negative.
-                // Extracts the tag layout that indicates the tag's sign.
                 let tag_primitive = tag.primitive();
                 discr_signed = matches!(tag_primitive, Primitive::Int(_, true));
                 match *tag_encoding {
                     TagEncoding::Direct => {
-                        // Truncates the discriminant value to fit into the layout.
-                        // But before the truncation, we have to extend it properly if the tag can be negative.
-                        // For example, `std::cmp::Ordering::Less` is defined as -1, and its discriminant
-                        // tag is internally represented as u128::MAX in the type definition.
-                        // However, the constant literal might have a different memory layout.
-                        // Currently, Rust encodes the constant `std::cmp::Ordering::Less` as 0xff.
-                        // So we need to first sign_extend 0xff and then truncate to fit into discr_layout.
-                        let v = if discr_signed {
+                        discr_bits = if discr_signed {
                             tag_primitive.size(&self.bv.tcx).sign_extend(data)
                         } else {
                             data
                         };
-                        // Not clear what is going on here, but we can't return a variant index
-                        // if the discriminant value (discr_bits) does not fall in the valid range.
-                        let valid_range = tag.valid_range(&self.bv.tcx);
-                        if valid_range.start <= valid_range.end {
-                            discr_bits = u128::clamp(v, valid_range.start, valid_range.end);
-                        } else {
-                            // No idea why the range specification goes from high to low, but it happens.
-                            discr_bits = u128::clamp(v, valid_range.end, valid_range.start);
-                        }
 
-                        // Iterates through all the variant definitions to find the actual index.
+                        // The discriminator value is not the index, so
+                        // iterate through all the variant definitions to find the actual index.
                         discr_index = match enum_ty_layout.ty.kind() {
-                            TyKind::Adt(adt, _) => adt
+                            TyKind::Adt(adt_def, _) => adt_def
                                 .discriminants(self.bv.tcx)
-                                .find(|(_, var)| var.val == discr_bits),
+                                .find(|(_, var)| var.val == data),
                             TyKind::Generator(def_id, substs, _) => {
                                 let substs = substs.as_generator();
                                 substs
                                     .discriminants(*def_id, self.bv.tcx)
-                                    .find(|(_, var)| var.val == discr_bits)
+                                    .find(|(_, var)| var.val == data)
                             }
                             _ => assume_unreachable!(),
                         }
-                        .unwrap()
-                        .0;
+                        .map(|i| i.0)
+                        .unwrap_or_else(|| VariantIdx::new(0));
 
                         discr_has_data = false;
                     }
@@ -3611,7 +3684,31 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 }
                 TyKind::Uint(..) => self.bv.cv.constant_value_cache.get_u128_for(data),
                 TyKind::RawPtr(..) => self.bv.cv.constant_value_cache.get_u128_for(data),
+                TyKind::Closure(def_id, substs) => {
+                    let specialized_ty = self.type_visitor().specialize_generic_argument_type(
+                        ty,
+                        &self.type_visitor().generic_argument_map,
+                    );
+                    let substs = self
+                        .type_visitor()
+                        .specialize_substs(substs, &self.type_visitor().generic_argument_map);
+                    if substs.len() == 3 {
+                        let tuple_ty = substs[2].expect_ty();
+                        let cv = self.get_constant_value_from_scalar(tuple_ty, data, size);
+                        let cp = Path::get_as_path(cv);
+                        let fr = self
+                            .visit_function_reference(*def_id, specialized_ty, Some(substs))
+                            .clone();
+                        let fv = Rc::<AbstractValue>::new(fr.into());
+                        let fp = Path::get_as_path(fv.clone());
+                        self.bv.copy_or_move_elements(fp, cp, tuple_ty, true);
+                        return fv;
+                    } else {
+                        unreachable!("substs for closure not right {:?}", substs);
+                    }
+                }
                 TyKind::FnDef(def_id, substs) => {
+                    debug_assert!(size == 0 && data == 0);
                     let specialized_ty = self.type_visitor().specialize_generic_argument_type(
                         ty,
                         &self.type_visitor().generic_argument_map,
@@ -3793,7 +3890,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 ) => {
                     if let TyKind::Closure(def_id, generic_args)
                     | TyKind::Generator(def_id, generic_args, _) =
-                        self.bv.tcx.type_of(*def_id).kind()
+                        self.bv.tcx.type_of(*def_id).skip_binder().kind()
                     {
                         let func_const =
                             self.visit_function_reference(*def_id, ty, Some(generic_args));
@@ -3941,7 +4038,22 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     None => Rc::from(format!("variant#{}", index.as_usize())),
                     Some(name) => Rc::from(name.as_str().deref()),
                 };
-                PathSelector::Downcast(name_str, index.as_usize())
+                let tag_value = if let TyKind::Adt(def, _) = base_ty.kind() {
+                    if def.is_enum() {
+                        let discr_ty = base_ty.discriminant_ty(self.bv.tcx);
+                        let discr_bits = match base_ty.discriminant_for_variant(self.bv.tcx, *index)
+                        {
+                            Some(discr) => discr.val,
+                            None => index.as_u32() as u128,
+                        };
+                        self.get_int_const_val(discr_bits, discr_ty)
+                    } else {
+                        Rc::new(BOTTOM)
+                    }
+                } else {
+                    Rc::new(BOTTOM)
+                };
+                PathSelector::Downcast(name_str, index.as_usize(), tag_value)
             }
             mir::ProjectionElem::OpaqueCast(_) => {
                 // Dummy selector that will be ignored by caller.

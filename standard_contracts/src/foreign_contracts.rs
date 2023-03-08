@@ -94,7 +94,7 @@ pub mod alloc {
             assume_unreachable!("capacity overflow");
         }
 
-        pub mod implement {
+        pub mod implement_alloc_raw_vec_RawVec_generic_par_T_alloc_alloc_Global {
             use std::ptr::Unique;
 
             pub struct RawVec<T> {
@@ -2868,6 +2868,10 @@ pub mod core {
             //     *ptr = val;
             // }
             pub fn ptr_offset_from<T>(ptr: *const T, base: *const T) -> isize {
+                // todo: implement this inside MIRAI
+                result!()
+            }
+            pub fn ptr_offset_from_unsigned<T>(ptr: *const T, base: *const T) -> isize {
                 // todo: implement this inside MIRAI
                 result!()
             }

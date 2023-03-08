@@ -113,7 +113,6 @@ impl rustc_driver::Callbacks for MiraiCallbacks {
         queries
             .global_ctxt()
             .unwrap()
-            .peek_mut()
             .enter(|tcx| self.analyze_with_mirai(compiler, tcx));
         if self.test_run {
             // We avoid code gen for test cases because LLVM is not used in a thread safe manner.

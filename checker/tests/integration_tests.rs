@@ -407,15 +407,15 @@ fn check_call_graph_output(
         if compare_lines(&expected, &actual) {
             0
         } else {
-            // println!("{file_name} failed to match {output_type:?} output");
-            // println!("Expected:\n{expected}");
-            // println!("Actual:\n{actual}");
-            // 1
-            let c = expected_regex.captures(&test_case_data).unwrap();
-            let updated =
-                expected_regex.replace(&test_case_data, format!("{}{actual}{}", &c[1], &c[3]));
-            fs::write(Path::new(&file_name), updated.to_string()).unwrap();
-            0
+            println!("{file_name} failed to match {output_type:?} output");
+            println!("Expected:\n{expected}");
+            println!("Actual:\n{actual}");
+            1
+            // let c = expected_regex.captures(&test_case_data).unwrap();
+            // let updated =
+            //     expected_regex.replace(&test_case_data, format!("{}{actual}{}", &c[1], &c[3]));
+            // fs::write(Path::new(&file_name), updated.to_string()).unwrap();
+            // 0
         }
     } else {
         println!("{file_name} failed to read {output_type:?} output");
