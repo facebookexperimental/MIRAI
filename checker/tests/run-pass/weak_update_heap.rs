@@ -5,7 +5,6 @@
 //
 
 // A test that assigns to a location that is unknown at compile time.
-#![feature(box_syntax)]
 
 // use mirai_annotations::*;
 
@@ -18,8 +17,8 @@ struct Foo {
 }
 
 fn do_join(cond: bool) {
-    let mut a = box Foo { f: 1 };
-    let mut b = box Foo { f: 2 };
+    let mut a = Box::new(Foo { f: 1 });
+    let mut b = Box::new(Foo { f: 2 });
     {
         let c = if cond { &mut a } else { &mut b };
         c.f = 3;

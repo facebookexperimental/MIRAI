@@ -15,7 +15,6 @@
 #![feature(rustc_private)]
 #![feature(array_chunks)]
 #![feature(box_patterns)]
-#![feature(box_syntax)]
 #![feature(core_intrinsics)]
 #![allow(clippy::mutable_key_type)]
 

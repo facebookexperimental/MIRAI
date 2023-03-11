@@ -6,8 +6,6 @@
 
 // A test that uses paths containing base addresses.
 
-#![feature(box_syntax)]
-
 use mirai_annotations::*;
 
 pub struct Foo {
@@ -21,7 +19,7 @@ pub fn f() -> Box<Foo> {
     };
     verify!(foo.x == 1);
     verify!(foo.y == 1111111111111111111);
-    box foo
+    Box::new(foo)
 }
 
 pub fn main() {}

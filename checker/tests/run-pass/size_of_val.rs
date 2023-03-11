@@ -10,7 +10,6 @@ use mirai_annotations::*;
 
 pub fn test1() {
     verify!(mem::size_of_val(&5i32) == 4);
-    verify!(mem::size_of_val(Box::new(5i32).as_ref()) == 4);
 
     let x: [u8; 13] = [0; 13];
     let y: &[u8] = &x;

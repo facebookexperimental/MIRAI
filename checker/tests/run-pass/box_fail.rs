@@ -6,10 +6,8 @@
 
 // A test that creates a box with a failure path that calls box_free
 
-#![feature(box_syntax)]
-
 pub fn test13(i: i64) {
-    let _x = box -i; //~ possible attempt to negate with overflow
+    let _x = Box::new(-i); //~ possible attempt to negate with overflow
 }
 
 pub fn main() {}

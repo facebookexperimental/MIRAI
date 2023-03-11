@@ -133,6 +133,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 self.visit_non_diverging_intrinsic(non_diverging_intrinsic);
             }
             mir::StatementKind::Nop => (),
+            mir::StatementKind::PlaceMention(_) => (),
         }
     }
 
@@ -293,7 +294,6 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 target,
                 unwind,
             } => self.visit_drop(place, *target, *unwind),
-            mir::TerminatorKind::DropAndReplace { .. } => assume_unreachable!(),
             mir::TerminatorKind::Call {
                 func,
                 args,

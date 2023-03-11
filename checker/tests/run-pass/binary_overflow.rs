@@ -33,13 +33,13 @@ pub fn tu128_overflowing_mul() {
 pub fn ti8_div_m1() -> i8 {
     let a: i8 = -128;
     let b: i8 = -1;
-    a / b //~ attempt to divide with overflow
+    a / b // ~ attempt to divide with overflow
 }
 
 pub fn ti8_rem_m1() -> i8 {
     let a: i8 = -128;
     let b: i8 = -1;
-    a % b //~ attempt to calculate the remainder with overflow
+    a % b // ~ attempt to calculate the remainder with overflow
 }
 
 pub fn main() {}

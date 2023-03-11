@@ -37,6 +37,6 @@ time cargo test
 cargo uninstall mirai || true
 cargo install --path ./checker
 
-# Run mirai on itself (using the optimized build in cargo as the bootstrap).
+# Run mirai on itself, using the optimized build in cargo as the bootstrap.
 cargo clean
 cargo mirai
