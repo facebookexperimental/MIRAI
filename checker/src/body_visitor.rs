@@ -105,14 +105,18 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
         active_calls_map: &'analysis mut HashMap<DefId, u64>,
         type_cache: Rc<RefCell<TypeCache<'tcx>>>,
     ) -> BodyVisitor<'analysis, 'compilation, 'tcx> {
+        let tcx = crate_visitor.tcx;
         let function_name = crate_visitor
             .summary_cache
             .get_summary_key_for(def_id)
             .clone();
-        let id = rustc_middle::ty::WithOptConstParam::unknown(def_id);
-        let def = rustc_middle::ty::InstanceDef::Item(id);
-        let mir = crate_visitor.tcx.instance_mir(def);
-        let tcx = crate_visitor.tcx;
+        let mir = if tcx.is_const_fn_raw(def_id) {
+            tcx.mir_for_ctfe(def_id)
+        } else {
+            let id = rustc_middle::ty::WithOptConstParam::unknown(def_id);
+            let def = rustc_middle::ty::InstanceDef::Item(id);
+            tcx.instance_mir(def)
+        };
         crate_visitor.call_graph.add_root(def_id);
         BodyVisitor {
             cv: crate_visitor,
@@ -834,6 +838,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
         }
         trace!("def_id {:?}", self.tcx.def_kind(self.def_id));
         let saved_mir = self.mir;
+        let saved_def_id = self.def_id;
         for (ordinal, constant_mir) in self.tcx.promoted_mir(self.def_id).iter().enumerate() {
             self.mir = constant_mir;
             self.type_visitor_mut().mir = self.mir;
@@ -844,6 +849,8 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 let mut result_root: Rc<Path> = Path::new_result();
                 let mut promoted_root: Rc<Path> =
                     Rc::new(PathEnum::PromotedConstant { ordinal }.into());
+                self.type_visitor_mut()
+                    .set_path_rustc_type(promoted_root.clone(), result_rustc_type);
                 if self
                     .type_visitor()
                     .is_slice_pointer(result_rustc_type.kind())
@@ -910,6 +917,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
             }
             self.reset_visitor_state();
         }
+        self.def_id = saved_def_id;
         self.mir = saved_mir;
         self.type_visitor_mut().mir = saved_mir;
         environment
@@ -1300,8 +1308,11 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                             // The right hand value has lost precision in such a way that we cannot
                             // even get its rustc type. In that case, let's try using the type of
                             // the left hand value.
-                            self.type_visitor
-                                .get_path_rustc_type(&tpath, self.current_span)
+                            let t = self
+                                .type_visitor
+                                .get_path_rustc_type(&tpath, self.current_span);
+                            self.type_visitor.set_path_rustc_type(path.clone(), t);
+                            t
                         } else {
                             t
                         }

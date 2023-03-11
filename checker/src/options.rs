@@ -16,7 +16,7 @@ fn make_options_parser<'help>(running_test_harness: bool) -> Command<'help> {
     // to construct this more then once per regular program run.
     let mut parser = Command::new("MIRAI")
         .no_binary_name(true)
-        .version("v1.1.6")
+        .version("v1.1.7")
         .arg(Arg::new("single_func")
             .long("single_func")
             .takes_value(true)

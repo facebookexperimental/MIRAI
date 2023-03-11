@@ -401,6 +401,11 @@ impl<'tcx> TypeVisitor<'tcx> {
                 }
             }
             PathEnum::PhantomData => self.tcx.types.never,
+            PathEnum::PromotedConstant { .. } => {
+                debug!("path.value is {:?} at {:?}", path.value, current_span);
+                debug!("path_ty_cache {:?}", self.path_ty_cache);
+                self.tcx.types.never
+            }
             PathEnum::Result => {
                 if self.mir.local_decls.is_empty() {
                     info!("result type wanted from function without result local");
@@ -660,11 +665,6 @@ impl<'tcx> TypeVisitor<'tcx> {
                     "static variable path.value is {:?} at {:?}",
                     path.value, current_span
                 );
-                self.tcx.types.never
-            }
-            _ => {
-                info!("path.value is {:?} at {:?}", path.value, current_span);
-                info!("path_ty_cache {:?}", self.path_ty_cache);
                 self.tcx.types.never
             }
         }

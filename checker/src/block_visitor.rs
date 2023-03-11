@@ -181,7 +181,6 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
     /// memory being read from and written to and size indicates how many bytes are being copied over.
     #[logfn_inputs(TRACE)]
     fn visit_copy_non_overlapping(&mut self, copy_info: &mir::CopyNonOverlapping<'tcx>) {
-        debug!("env {:?}", self.bv.current_environment);
         let source_val = self.visit_operand(&copy_info.src);
         let source_path =
             Path::new_deref(Path::get_as_path(source_val), ExpressionType::NonPrimitive)
@@ -3139,9 +3138,12 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 let mut bytes_left_to_deserialize = bytes;
                 if let Ok(enum_ty_layout) = self.type_visitor().layout_of(ty) {
                     trace!("enum_ty_layout {:?}", enum_ty_layout);
-                    let len = bytes.len();
+                    let len = enum_ty_layout.size.bytes_usize();
                     let tag_length;
-                    let data = if len < 2 {
+                    let data = if len == 0 {
+                        tag_length = 0;
+                        0
+                    } else if len < 2 {
                         tag_length = 1;
                         bytes[0] as u128
                     } else if len < 4 {
@@ -3335,9 +3337,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 self.bv.update_value_at(target_path, Rc::new(f.into()));
                 &bytes[8..]
             },
-            TyKind::FnPtr(..)
-            | TyKind::RawPtr(rustc_middle::ty::TypeAndMut { .. })
-            | TyKind::Ref(..) => {
+            TyKind::RawPtr(rustc_middle::ty::TypeAndMut { .. }) | TyKind::Ref(..) => {
                 // serialized pointers are not the values pointed to, just some number.
                 // todo: figure out how to deference that number and deserialize the
                 // value to which this pointer refers.
@@ -3692,8 +3692,8 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     let substs = self
                         .type_visitor()
                         .specialize_substs(substs, &self.type_visitor().generic_argument_map);
-                    if substs.len() == 3 {
-                        let tuple_ty = substs[2].expect_ty();
+                    if substs.len() >= 3 {
+                        let tuple_ty = substs.last().unwrap().expect_ty();
                         let cv = self.get_constant_value_from_scalar(tuple_ty, data, size);
                         let cp = Path::get_as_path(cv);
                         let fr = self
