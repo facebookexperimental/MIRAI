@@ -6,8 +6,6 @@
 
 // A test that use enum discriminants
 
-#![feature(box_syntax)]
-
 use mirai_annotations::*;
 
 pub enum Path {
@@ -29,7 +27,7 @@ impl Path {
                 checked_assume!(qualifier.path_length() <= 10);
                 Path::QualifiedPath {
                     length: qualifier.path_length() + 1,
-                    qualifier: box Path::Root,
+                    qualifier: Box::new(Path::Root),
                 }
             }
             _ => new_root,
