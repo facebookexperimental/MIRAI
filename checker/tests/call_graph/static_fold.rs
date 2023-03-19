@@ -65,7 +65,9 @@ commit;
   "files": [
     "tests/call_graph/static_fold.rs",
     "/rustc/22f247c6f3ed388cb702d01c2ff27da658a8b353/library/std/src/io/stdio.rs",
-    "/rustc/22f247c6f3ed388cb702d01c2ff27da658a8b353/library/core/src/fmt/mod.rs"
+    "/rustc/22f247c6f3ed388cb702d01c2ff27da658a8b353/library/core/src/fmt/mod.rs",
+    "/rustc/22f247c6f3ed388cb702d01c2ff27da658a8b353/library/core/src/slice/mod.rs",
+    "/rustc/22f247c6f3ed388cb702d01c2ff27da658a8b353/library/core/src/ptr/metadata.rs"
   ],
   "callables": [
     {
@@ -103,6 +105,18 @@ commit;
       "file_index": 2,
       "first_line": 401,
       "local": false
+    },
+    {
+      "name": "/core/core::slice::<impl [T]>::len(&[T])->usize",
+      "file_index": 3,
+      "first_line": 136,
+      "local": true
+    },
+    {
+      "name": "/core/std::ptr::metadata(*const T)-><T as std::ptr::Pointee>::Metadata",
+      "file_index": 4,
+      "first_line": 94,
+      "local": true
     }
   ],
   "calls": [
@@ -140,6 +154,13 @@ commit;
       5,
       2,
       5
+    ],
+    [
+      3,
+      137,
+      9,
+      6,
+      7
     ]
   ]
 }*/

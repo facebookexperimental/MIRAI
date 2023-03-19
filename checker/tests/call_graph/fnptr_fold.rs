@@ -69,7 +69,9 @@ commit;
   "files": [
     "tests/call_graph/fnptr_fold.rs",
     "/rustc/22f247c6f3ed388cb702d01c2ff27da658a8b353/library/std/src/io/stdio.rs",
-    "/rustc/22f247c6f3ed388cb702d01c2ff27da658a8b353/library/core/src/fmt/mod.rs"
+    "/rustc/22f247c6f3ed388cb702d01c2ff27da658a8b353/library/core/src/fmt/mod.rs",
+    "/rustc/22f247c6f3ed388cb702d01c2ff27da658a8b353/library/core/src/slice/mod.rs",
+    "/rustc/22f247c6f3ed388cb702d01c2ff27da658a8b353/library/core/src/ptr/metadata.rs"
   ],
   "callables": [
     {
@@ -106,6 +108,18 @@ commit;
       "name": "/core/std::fmt::Arguments::<'a>::new_v1(&'a [&'static str],&'a [core::fmt::ArgumentV1<'a>])->std::fmt::Arguments<'a>",
       "file_index": 2,
       "first_line": 401,
+      "local": true
+    },
+    {
+      "name": "/core/core::slice::<impl [T]>::len(&[T])->usize",
+      "file_index": 3,
+      "first_line": 136,
+      "local": true
+    },
+    {
+      "name": "/core/std::ptr::metadata(*const T)-><T as std::ptr::Pointee>::Metadata",
+      "file_index": 4,
+      "first_line": 94,
       "local": true
     }
   ],
@@ -144,6 +158,41 @@ commit;
       5,
       2,
       5
+    ],
+    [
+      2,
+      402,
+      12,
+      5,
+      6
+    ],
+    [
+      2,
+      402,
+      27,
+      5,
+      6
+    ],
+    [
+      2,
+      402,
+      41,
+      5,
+      6
+    ],
+    [
+      2,
+      402,
+      56,
+      5,
+      6
+    ],
+    [
+      3,
+      137,
+      9,
+      6,
+      7
     ],
     [
       2,

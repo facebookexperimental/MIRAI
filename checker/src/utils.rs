@@ -515,7 +515,7 @@ pub fn is_concrete(ty: &TyKind<'_>) -> bool {
     }
 }
 
-/// Dumps a human readable MIR redendering of the function with the given DefId to standard output.
+/// Dumps a human readable MIR rendering of the function with the given DefId to standard output.
 pub fn pretty_print_mir(tcx: TyCtxt<'_>, def_id: DefId) {
     if !matches!(
         tcx.def_kind(def_id),

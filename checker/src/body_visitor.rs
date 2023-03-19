@@ -105,14 +105,18 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
         active_calls_map: &'analysis mut HashMap<DefId, u64>,
         type_cache: Rc<RefCell<TypeCache<'tcx>>>,
     ) -> BodyVisitor<'analysis, 'compilation, 'tcx> {
+        let tcx = crate_visitor.tcx;
         let function_name = crate_visitor
             .summary_cache
             .get_summary_key_for(def_id)
             .clone();
-        let id = rustc_middle::ty::WithOptConstParam::unknown(def_id);
-        let def = rustc_middle::ty::InstanceDef::Item(id);
-        let mir = crate_visitor.tcx.instance_mir(def);
-        let tcx = crate_visitor.tcx;
+        let mir = if tcx.is_const_fn_raw(def_id) {
+            tcx.mir_for_ctfe(def_id)
+        } else {
+            let id = rustc_middle::ty::WithOptConstParam::unknown(def_id);
+            let def = rustc_middle::ty::InstanceDef::Item(id);
+            tcx.instance_mir(def)
+        };
         crate_visitor.call_graph.add_root(def_id);
         BodyVisitor {
             cv: crate_visitor,

@@ -181,7 +181,6 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
     /// memory being read from and written to and size indicates how many bytes are being copied over.
     #[logfn_inputs(TRACE)]
     fn visit_copy_non_overlapping(&mut self, copy_info: &mir::CopyNonOverlapping<'tcx>) {
-        debug!("env {:?}", self.bv.current_environment);
         let source_val = self.visit_operand(&copy_info.src);
         let source_path =
             Path::new_deref(Path::get_as_path(source_val), ExpressionType::NonPrimitive)
