@@ -68,10 +68,10 @@ commit;
 /* EXPECTED:CALL_SITES{
   "files": [
     "tests/call_graph/fnptr_fold.rs",
-    "/rustc/22f247c6f3ed388cb702d01c2ff27da658a8b353/library/std/src/io/stdio.rs",
-    "/rustc/22f247c6f3ed388cb702d01c2ff27da658a8b353/library/core/src/fmt/mod.rs",
-    "/rustc/22f247c6f3ed388cb702d01c2ff27da658a8b353/library/core/src/slice/mod.rs",
-    "/rustc/22f247c6f3ed388cb702d01c2ff27da658a8b353/library/core/src/ptr/metadata.rs"
+    "/rustc/44f5180584404d18058cbbf224c55255db4fdcbb/library/std/src/io/stdio.rs",
+    "/rustc/44f5180584404d18058cbbf224c55255db4fdcbb/library/core/src/fmt/mod.rs",
+    "/rustc/44f5180584404d18058cbbf224c55255db4fdcbb/library/core/src/slice/mod.rs",
+    "/rustc/44f5180584404d18058cbbf224c55255db4fdcbb/library/core/src/ptr/metadata.rs"
   ],
   "callables": [
     {
@@ -105,9 +105,9 @@ commit;
       "local": false
     },
     {
-      "name": "/core/std::fmt::Arguments::<'a>::new_v1(&'a [&'static str],&'a [core::fmt::ArgumentV1<'a>])->std::fmt::Arguments<'a>",
+      "name": "/core/std::fmt::Arguments::<'a>::new_const(&'a [&'static str])->std::fmt::Arguments<'a>",
       "file_index": 2,
-      "first_line": 401,
+      "first_line": 399,
       "local": true
     },
     {
@@ -161,31 +161,17 @@ commit;
     ],
     [
       2,
-      402,
+      400,
       12,
       5,
       6
     ],
     [
       2,
-      402,
-      27,
+      401,
+      13,
       5,
-      6
-    ],
-    [
-      2,
-      402,
-      41,
-      5,
-      6
-    ],
-    [
-      2,
-      402,
-      56,
-      5,
-      6
+      5
     ],
     [
       3,
@@ -193,13 +179,6 @@ commit;
       9,
       6,
       7
-    ],
-    [
-      2,
-      403,
-      13,
-      5,
-      5
     ]
   ]
 }*/
