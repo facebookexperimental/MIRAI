@@ -441,10 +441,16 @@ fn push_component_name(component_data: DefPathData, target: &mut String) {
 pub fn def_id_as_qualified_name_str(tcx: TyCtxt<'_>, def_id: DefId) -> Rc<str> {
     let mut name = format!("/{}/", crate_name(tcx, def_id));
     name.push_str(&tcx.def_path_str(def_id));
-    let fn_ty = tcx.type_of(def_id).skip_binder();
-    if fn_ty.is_fn() {
+    if tcx.def_kind(def_id).is_fn_like() {
+        let fn_ty = tcx.type_of(def_id).skip_binder();
         name.push('(');
-        let fn_sig = fn_ty.fn_sig(tcx).skip_binder();
+        let fn_sig = if fn_ty.is_fn() {
+            fn_ty.fn_sig(tcx).skip_binder()
+        } else if let ty::Closure(_, substs) = fn_ty.kind() {
+            substs.as_closure().sig().skip_binder()
+        } else {
+            unreachable!()
+        };
         let mut first = true;
         for param_ty in fn_sig.inputs() {
             if first {
@@ -509,7 +515,7 @@ pub fn is_concrete(ty: &TyKind<'_>) -> bool {
     }
 }
 
-/// Dumps a human readable MIR redendering of the function with the given DefId to standard output.
+/// Dumps a human readable MIR rendering of the function with the given DefId to standard output.
 pub fn pretty_print_mir(tcx: TyCtxt<'_>, def_id: DefId) {
     if !matches!(
         tcx.def_kind(def_id),

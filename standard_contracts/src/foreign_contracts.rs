@@ -578,6 +578,31 @@ pub mod core {
         }
     }
 
+    pub mod convert {
+        pub mod AsRef {
+            pub fn as_ref__trait_aead_Buffer_slice_u8<T>(_self: &T) -> &T {
+                _self
+            }
+        }
+
+        pub mod Into {
+            pub fn into__ref_str_alloc_boxed_Box_trait_std_error_Error_alloc_alloc_Global(
+                s: &str,
+            ) -> Box<&str> {
+                Box::new(s)
+            }
+            pub fn into__usize_usize(t: usize) -> usize {
+                t
+            }
+        }
+
+        pub mod implement_convert {
+            pub fn try_into__ref_slice_u8_array_u8(arg: &[u8]) -> &[u8] {
+                arg
+            }
+        }
+    }
+
     pub mod core_arch {
         pub mod simd_llvm {
             //pub fn simd_select_bitmask
@@ -1141,6 +1166,16 @@ pub mod core {
         pub struct Void {}
 
         default_contract!(write);
+    }
+
+    pub mod f64 {
+        pub mod implement {
+            pub mod to_bits {
+                pub fn ct_f64_to_u64(ct: f64) -> u64 {
+                    unsafe { std::mem::transmute::<f64, u64>(ct) }
+                }
+            }
+        }
     }
 
     pub mod hash {
@@ -2892,31 +2927,6 @@ pub mod core {
                     (false, true) => 0,
                     (true, true) => unreachable!(),
                 }
-            }
-        }
-    }
-
-    pub mod convert {
-        pub mod AsRef {
-            pub fn as_ref__trait_aead_Buffer_slice_u8<T>(_self: &T) -> &T {
-                _self
-            }
-        }
-
-        pub mod Into {
-            pub fn into__ref_str_alloc_boxed_Box_trait_std_error_Error_alloc_alloc_Global(
-                s: &str,
-            ) -> Box<&str> {
-                Box::new(s)
-            }
-            pub fn into__usize_usize(t: usize) -> usize {
-                t
-            }
-        }
-
-        pub mod implement_convert {
-            pub fn try_into__ref_slice_u8_array_u8(arg: &[u8]) -> &[u8] {
-                arg
             }
         }
     }
