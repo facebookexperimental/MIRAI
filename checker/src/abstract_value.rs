@@ -794,6 +794,7 @@ pub trait AbstractValueTrait: Sized {
     fn is_contained_in_zeroed_heap_block(&self) -> bool;
     fn is_function(&self) -> bool;
     fn is_non_null(&self) -> bool;
+    fn is_one(&self) -> bool;
     fn is_top(&self) -> bool;
     fn is_unit(&self) -> bool;
     fn is_zero(&self) -> bool;
@@ -1780,15 +1781,14 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             // [0 & y] -> 0
             return self.clone();
         }
-        if let Expression::CompileTimeConstant(ConstantDomain::I128(0))
-        | Expression::CompileTimeConstant(ConstantDomain::U128(0)) = other.expression
-        {
-            // [x & 0] -> 0
-            return other.clone();
-        }
         // [x & x] -> x
         if self.eq(&other) {
             return other;
+        }
+        if self.is_compile_time_constant() && matches!(other.expression, Expression::Join { .. }) {
+            return AbstractValue::make_binary(self.clone(), other, |left, right| {
+                Expression::BitAnd { left, right }
+            });
         }
         self.try_to_constant_fold_and_distribute_binary_op(
             other,
@@ -2406,6 +2406,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 checked_assume!(
                     *cast_type == ExpressionType::NonPrimitive
                         || *cast_type == ExpressionType::ThinPointer
+                        || *cast_type == ExpressionType::Usize
                 );
                 operand.dereference(target_type)
             }
@@ -3344,6 +3345,15 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             *cached_non_null = Some(self.get_is_non_null());
         }
         self.is_non_null()
+    }
+
+    /// True if this value is the constant 1 of some numeric type.
+    #[logfn_inputs(TRACE)]
+    fn is_one(&self) -> bool {
+        if let Expression::CompileTimeConstant(c) = &self.expression {
+            return c.is_one();
+        }
+        false
     }
 
     /// True if all possible concrete values are elements of the set corresponding to this domain.
@@ -6707,7 +6717,7 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// A cast that re-interprets existing bits rather than doing conversions.
     /// When the source type and target types differ in length, bits are truncated
     /// or zero filled as appropriate.
-    #[logfn(TRACE)]
+    #[logfn_inputs(TRACE)]
     fn transmute(&self, target_type: ExpressionType) -> Rc<AbstractValue> {
         if target_type.is_integer() && self.expression.infer_type().is_integer() {
             self.unsigned_modulo(target_type.bit_length())

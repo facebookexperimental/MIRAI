@@ -41,7 +41,7 @@ pub struct CallVisitor<'call, 'block, 'analysis, 'compilation, 'tcx> {
     pub callee_generic_arguments: Option<SubstsRef<'tcx>>,
     pub callee_known_name: KnownNames,
     pub callee_generic_argument_map: Option<HashMap<rustc_span::Symbol, GenericArg<'tcx>>>,
-    pub cleanup: Option<mir::BasicBlock>,
+    pub unwind: mir::UnwindAction,
     pub destination: mir::Place<'tcx>,
     pub target: Option<mir::BasicBlock>,
     pub environment_before_call: Environment,
@@ -80,7 +80,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                 callee_generic_argument_map,
                 actual_args: vec![],
                 actual_argument_types: vec![],
-                cleanup: None,
+                unwind: mir::UnwindAction::Continue,
                 destination: mir::Place::return_place(),
                 target: None,
                 environment_before_call,
@@ -632,7 +632,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                 if self.block_visitor.bv.check_for_errors {
                     self.report_calls_to_special_functions();
                 }
-                if let Some(target) = &self.cleanup {
+                if let mir::UnwindAction::Cleanup(target) = &self.unwind {
                     let exit_condition = self
                         .block_visitor
                         .bv
@@ -1468,12 +1468,12 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
         } else {
             assume_unreachable!();
         }
-        if let Some(cleanup_target) = self.cleanup {
+        if let mir::UnwindAction::Cleanup(target) = self.unwind {
             self.block_visitor
                 .bv
                 .current_environment
                 .exit_conditions
-                .insert_mut(cleanup_target, abstract_value::FALSE.into());
+                .insert_mut(target, abstract_value::FALSE.into());
         }
     }
 

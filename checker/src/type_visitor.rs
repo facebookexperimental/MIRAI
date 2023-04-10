@@ -713,7 +713,7 @@ impl<'tcx> TypeVisitor<'tcx> {
     ) -> Ty<'tcx> {
         for variant in def.variants().iter() {
             if ordinal < variant.fields.len() {
-                let field = &variant.fields[ordinal];
+                let field = &variant.fields[ordinal.into()];
                 let ft = field.ty(self.tcx, substs);
                 trace!("field {:?} type is {:?}", ordinal, ft);
                 return ft;

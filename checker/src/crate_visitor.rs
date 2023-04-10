@@ -233,14 +233,11 @@ impl<'compilation, 'tcx> CrateVisitor<'compilation, 'tcx> {
                     {
                         if let mir::ConstantKind::Ty(c) = con.literal {
                             if let rustc_middle::ty::ConstKind::Unevaluated(UnevaluatedConst {
-                                def: def_ty,
+                                def,
                                 ..
                             }) = c.kind()
                             {
-                                result.push(utils::def_id_display_name(
-                                    self.tcx,
-                                    def_ty.def_id_for_type_of(),
-                                ));
+                                result.push(utils::def_id_display_name(self.tcx, def));
                             }
                         }
                     }

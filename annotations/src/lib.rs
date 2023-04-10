@@ -1115,7 +1115,7 @@ macro_rules! verify_unreachable {
             unreachable!($message)
         }
     };
-    ($msg:expr,) => ({
+    ($msg:expr) => ({
         if cfg!(mirai) {
             panic!($message)
         } else {

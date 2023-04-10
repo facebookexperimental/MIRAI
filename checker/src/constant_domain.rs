@@ -699,6 +699,18 @@ impl ConstantDomain {
         matches!(self, ConstantDomain::True)
     }
 
+    /// True if this value is the constant 1 of some numeric type.
+    #[logfn_inputs(TRACE)]
+    pub fn is_one(&self) -> bool {
+        match &self {
+            ConstantDomain::F32(val) => *val == 1,
+            ConstantDomain::F64(val) => *val == 1,
+            ConstantDomain::I128(val) => *val == 1,
+            ConstantDomain::U128(val) => *val == 1,
+            _ => false,
+        }
+    }
+
     /// True if this value is the constant 0 of some numeric type.
     #[logfn_inputs(TRACE)]
     pub fn is_zero(&self) -> bool {

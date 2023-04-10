@@ -16,7 +16,7 @@ pub fn t1(bit_map: u8) {
 pub fn t2(mut existence_bitmap: u16) {
     for _ in 0..existence_bitmap.count_ones() {
         let next_child = existence_bitmap.trailing_zeros() as u8;
-        assume!(next_child & 0xF0 == 0); // because we'll only get here if existence_bitmap is not zero
+        assume!(next_child < 16); // because we'll only get here if existence_bitmap is not zero
         existence_bitmap &= !(1 << next_child);
     }
 }
