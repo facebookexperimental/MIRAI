@@ -13,15 +13,15 @@ cargo update
 cargo fmt --all
 # Run lint checks
 cargo audit
-cargo clippy --all-features --all-targets -- -D warnings
+cargo clippy --no-default-features --all-targets -- -D warnings
 # Build mirai (in debug mode) so that we can build the standard contracts
-cargo build
+cargo build --no-default-features
 
 # build the mirai-standard-contracts crate
 touch standard_contracts/src/lib.rs
-RUSTFLAGS="-C overflow-checks=off" cargo build --lib -p mirai-standard-contracts
+cargo build --lib -p mirai-standard-contracts
 touch standard_contracts/src/lib.rs
-RUSTFLAGS="-C overflow-checks=off" RUSTC_WRAPPER=target/debug/mirai RUST_BACKTRACE=1 MIRAI_LOG=warn MIRAI_START_FRESH=true MIRAI_SHARE_PERSISTENT_STORE=true MIRAI_FLAGS="--diag=paranoid" cargo build --lib -p mirai-standard-contracts
+RUSTC_WRAPPER=target/debug/mirai RUST_BACKTRACE=1 MIRAI_LOG=warn MIRAI_START_FRESH=true MIRAI_SHARE_PERSISTENT_STORE=true MIRAI_FLAGS="--diag=paranoid" cargo build --lib -p mirai-standard-contracts
 
 # collect the summary store into a tar file
 cd target/debug/deps
@@ -38,5 +38,5 @@ cargo uninstall mirai || true
 cargo install --path ./checker
 
 # Run mirai on itself, using the optimized build in cargo as the bootstrap.
-cargo clean
-cargo mirai
+cargo clean -p mirai
+cargo mirai --no-default-features

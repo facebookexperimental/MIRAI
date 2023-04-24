@@ -29,6 +29,8 @@ pub mod alloc {
                 }
             }
             pub mod node {
+                use std::num::Wrapping;
+
                 pub enum LeftOrRight<T> {
                     Left(T),
                     Right(T),
@@ -56,6 +58,9 @@ pub mod alloc {
                 const EDGE_IDX_RIGHT_OF_CENTER: usize = B;
 
                 fn splitpoint(edge_idx: usize) -> (usize, LeftOrRight<usize>) {
+                    use ::std::num::Wrapping;
+                    use std::ops::Sub;
+
                     precondition!(edge_idx <= CAPACITY);
                     match edge_idx {
                         0..EDGE_IDX_LEFT_OF_CENTER => {
@@ -65,7 +70,9 @@ pub mod alloc {
                         EDGE_IDX_RIGHT_OF_CENTER => (KV_IDX_CENTER, LeftOrRight::Right(0)),
                         _ => (
                             KV_IDX_CENTER + 1,
-                            LeftOrRight::Right(edge_idx - (KV_IDX_CENTER + 1 + 1)),
+                            LeftOrRight::Right(
+                                Wrapping(edge_idx).sub(Wrapping(KV_IDX_CENTER + 1 + 1)).0,
+                            ),
                         ),
                     }
                 }
@@ -1687,18 +1694,18 @@ pub mod core {
             //     *dst += src;
             //     result
             // }
-            atomic_int!(atomic_xadd_seqcst__i8, i8, +=);
-            atomic_int!(atomic_xadd_seqcst__i16, i16, +=);
-            atomic_int!(atomic_xadd_seqcst__i32, i32, +=);
-            atomic_int!(atomic_xadd_seqcst__i64, i64, +=);
-            atomic_int!(atomic_xadd_seqcst__isize, isize, +=);
-            atomic_int!(atomic_xadd_seqcst__u8, u8, +=);
-            atomic_int!(atomic_xadd_seqcst__u16, u16, +=);
-            atomic_int!(atomic_xadd_seqcst__u32, u32, +=);
-            atomic_int!(atomic_xadd_seqcst__u64, u64, +=);
-            atomic_int!(atomic_xadd_seqcst__usize, usize, +=);
-            atomic_int!(atomic_xadd_seqcst__i128, i128, +=);
-            atomic_int!(atomic_xadd_seqcst__u128, u128, +=);
+            atomic_int!(atomic_xadd_seqcst__i8, i8, add_assign);
+            atomic_int!(atomic_xadd_seqcst__i16, i16, add_assign);
+            atomic_int!(atomic_xadd_seqcst__i32, i32, add_assign);
+            atomic_int!(atomic_xadd_seqcst__i64, i64, add_assign);
+            atomic_int!(atomic_xadd_seqcst__isize, isize, add_assign);
+            atomic_int!(atomic_xadd_seqcst__u8, u8, add_assign);
+            atomic_int!(atomic_xadd_seqcst__u16, u16, add_assign);
+            atomic_int!(atomic_xadd_seqcst__u32, u32, add_assign);
+            atomic_int!(atomic_xadd_seqcst__u64, u64, add_assign);
+            atomic_int!(atomic_xadd_seqcst__usize, usize, add_assign);
+            atomic_int!(atomic_xadd_seqcst__i128, i128, add_assign);
+            atomic_int!(atomic_xadd_seqcst__u128, u128, add_assign);
 
             // pub unsafe fn atomic_xadd_acquire<T>(dst: *mut T, src: T) -> T
             // where
@@ -1709,18 +1716,18 @@ pub mod core {
             //     *dst += src;
             //     result
             // }
-            atomic_int!(atomic_xadd_acquire__i8, i8, +=);
-            atomic_int!(atomic_xadd_acquire__i16, i16, +=);
-            atomic_int!(atomic_xadd_acquire__i32, i32, +=);
-            atomic_int!(atomic_xadd_acquire__i64, i64, +=);
-            atomic_int!(atomic_xadd_acquire__isize, isize, +=);
-            atomic_int!(atomic_xadd_acquire__u8, u8, +=);
-            atomic_int!(atomic_xadd_acquire__u16, u16, +=);
-            atomic_int!(atomic_xadd_acquire__u32, u32, +=);
-            atomic_int!(atomic_xadd_acquire__u64, u64, +=);
-            atomic_int!(atomic_xadd_acquire__usize, usize, +=);
-            atomic_int!(atomic_xadd_acquire__i128, i128, +=);
-            atomic_int!(atomic_xadd_acquire__u128, u128, +=);
+            atomic_int!(atomic_xadd_acquire__i8, i8, add_assign);
+            atomic_int!(atomic_xadd_acquire__i16, i16, add_assign);
+            atomic_int!(atomic_xadd_acquire__i32, i32, add_assign);
+            atomic_int!(atomic_xadd_acquire__i64, i64, add_assign);
+            atomic_int!(atomic_xadd_acquire__isize, isize, add_assign);
+            atomic_int!(atomic_xadd_acquire__u8, u8, add_assign);
+            atomic_int!(atomic_xadd_acquire__u16, u16, add_assign);
+            atomic_int!(atomic_xadd_acquire__u32, u32, add_assign);
+            atomic_int!(atomic_xadd_acquire__u64, u64, add_assign);
+            atomic_int!(atomic_xadd_acquire__usize, usize, add_assign);
+            atomic_int!(atomic_xadd_acquire__i128, i128, add_assign);
+            atomic_int!(atomic_xadd_acquire__u128, u128, add_assign);
 
             // pub unsafe fn atomic_xadd_release<T>(dst: *mut T, src: T) -> T
             // where
@@ -1731,18 +1738,18 @@ pub mod core {
             //     *dst += src;
             //     result
             // }
-            atomic_int!(atomic_xadd_release__i8, i8, +=);
-            atomic_int!(atomic_xadd_release__i16, i16, +=);
-            atomic_int!(atomic_xadd_release__i32, i32, +=);
-            atomic_int!(atomic_xadd_release__i64, i64, +=);
-            atomic_int!(atomic_xadd_release__isize, isize, +=);
-            atomic_int!(atomic_xadd_release__u8, u8, +=);
-            atomic_int!(atomic_xadd_release__u16, u16, +=);
-            atomic_int!(atomic_xadd_release__u32, u32, +=);
-            atomic_int!(atomic_xadd_release__u64, u64, +=);
-            atomic_int!(atomic_xadd_release__usize, usize, +=);
-            atomic_int!(atomic_xadd_release__i128, i128, +=);
-            atomic_int!(atomic_xadd_release__u128, u128, +=);
+            atomic_int!(atomic_xadd_release__i8, i8, add_assign);
+            atomic_int!(atomic_xadd_release__i16, i16, add_assign);
+            atomic_int!(atomic_xadd_release__i32, i32, add_assign);
+            atomic_int!(atomic_xadd_release__i64, i64, add_assign);
+            atomic_int!(atomic_xadd_release__isize, isize, add_assign);
+            atomic_int!(atomic_xadd_release__u8, u8, add_assign);
+            atomic_int!(atomic_xadd_release__u16, u16, add_assign);
+            atomic_int!(atomic_xadd_release__u32, u32, add_assign);
+            atomic_int!(atomic_xadd_release__u64, u64, add_assign);
+            atomic_int!(atomic_xadd_release__usize, usize, add_assign);
+            atomic_int!(atomic_xadd_release__i128, i128, add_assign);
+            atomic_int!(atomic_xadd_release__u128, u128, add_assign);
 
             // pub unsafe fn atomic_xadd_acqrel<T>(dst: *mut T, src: T) -> T
             // where
@@ -1753,18 +1760,18 @@ pub mod core {
             //     *dst += src;
             //     result
             // }
-            atomic_int!(atomic_xadd_acqrel__i8, i8, +=);
-            atomic_int!(atomic_xadd_acqrel__i16, i16, +=);
-            atomic_int!(atomic_xadd_acqrel__i32, i32, +=);
-            atomic_int!(atomic_xadd_acqrel__i64, i64, +=);
-            atomic_int!(atomic_xadd_acqrel__isize, isize, +=);
-            atomic_int!(atomic_xadd_acqrel__u8, u8, +=);
-            atomic_int!(atomic_xadd_acqrel__u16, u16, +=);
-            atomic_int!(atomic_xadd_acqrel__u32, u32, +=);
-            atomic_int!(atomic_xadd_acqrel__u64, u64, +=);
-            atomic_int!(atomic_xadd_acqrel__usize, usize, +=);
-            atomic_int!(atomic_xadd_acqrel__i128, i128, +=);
-            atomic_int!(atomic_xadd_acqrel__u128, u128, +=);
+            atomic_int!(atomic_xadd_acqrel__i8, i8, add_assign);
+            atomic_int!(atomic_xadd_acqrel__i16, i16, add_assign);
+            atomic_int!(atomic_xadd_acqrel__i32, i32, add_assign);
+            atomic_int!(atomic_xadd_acqrel__i64, i64, add_assign);
+            atomic_int!(atomic_xadd_acqrel__isize, isize, add_assign);
+            atomic_int!(atomic_xadd_acqrel__u8, u8, add_assign);
+            atomic_int!(atomic_xadd_acqrel__u16, u16, add_assign);
+            atomic_int!(atomic_xadd_acqrel__u32, u32, add_assign);
+            atomic_int!(atomic_xadd_acqrel__u64, u64, add_assign);
+            atomic_int!(atomic_xadd_acqrel__usize, usize, add_assign);
+            atomic_int!(atomic_xadd_acqrel__i128, i128, add_assign);
+            atomic_int!(atomic_xadd_acqrel__u128, u128, add_assign);
 
             // pub unsafe fn atomic_xadd_relaxed<T>(dst: *mut T, src: T) -> T
             // where
@@ -1775,18 +1782,18 @@ pub mod core {
             //     *dst += src;
             //     result
             // }
-            atomic_int!(atomic_xadd_relaxed__i8, i8, +=);
-            atomic_int!(atomic_xadd_relaxed__i16, i16, +=);
-            atomic_int!(atomic_xadd_relaxed__i32, i32, +=);
-            atomic_int!(atomic_xadd_relaxed__i64, i64, +=);
-            atomic_int!(atomic_xadd_relaxed__isize, isize, +=);
-            atomic_int!(atomic_xadd_relaxed__u8, u8, +=);
-            atomic_int!(atomic_xadd_relaxed__u16, u16, +=);
-            atomic_int!(atomic_xadd_relaxed__u32, u32, +=);
-            atomic_int!(atomic_xadd_relaxed__u64, u64, +=);
-            atomic_int!(atomic_xadd_relaxed__usize, usize, +=);
-            atomic_int!(atomic_xadd_relaxed__i128, i128, +=);
-            atomic_int!(atomic_xadd_relaxed__u128, u128, +=);
+            atomic_int!(atomic_xadd_relaxed__i8, i8, add_assign);
+            atomic_int!(atomic_xadd_relaxed__i16, i16, add_assign);
+            atomic_int!(atomic_xadd_relaxed__i32, i32, add_assign);
+            atomic_int!(atomic_xadd_relaxed__i64, i64, add_assign);
+            atomic_int!(atomic_xadd_relaxed__isize, isize, add_assign);
+            atomic_int!(atomic_xadd_relaxed__u8, u8, add_assign);
+            atomic_int!(atomic_xadd_relaxed__u16, u16, add_assign);
+            atomic_int!(atomic_xadd_relaxed__u32, u32, add_assign);
+            atomic_int!(atomic_xadd_relaxed__u64, u64, add_assign);
+            atomic_int!(atomic_xadd_relaxed__usize, usize, add_assign);
+            atomic_int!(atomic_xadd_relaxed__i128, i128, add_assign);
+            atomic_int!(atomic_xadd_relaxed__u128, u128, add_assign);
 
             // pub unsafe fn atomic_xsub_seqcst<T>(dst: *mut T, src: T) -> T
             // where
@@ -1797,18 +1804,18 @@ pub mod core {
             //     *dst -= src;
             //     result
             // }
-            atomic_int!(atomic_xsub_seqcst__i8, i8, -=);
-            atomic_int!(atomic_xsub_seqcst__i16, i16, -=);
-            atomic_int!(atomic_xsub_seqcst__i32, i32, -=);
-            atomic_int!(atomic_xsub_seqcst__i64, i64, -=);
-            atomic_int!(atomic_xsub_seqcst__isize, isize, -=);
-            atomic_int!(atomic_xsub_seqcst__u8, u8, -=);
-            atomic_int!(atomic_xsub_seqcst__u16, u16, -=);
-            atomic_int!(atomic_xsub_seqcst__u32, u32, -=);
-            atomic_int!(atomic_xsub_seqcst__u64, u64, -=);
-            atomic_int!(atomic_xsub_seqcst__usize, usize, -=);
-            atomic_int!(atomic_xsub_seqcst__i128, i128, -=);
-            atomic_int!(atomic_xsub_seqcst__u128, u128, -=);
+            atomic_int!(atomic_xsub_seqcst__i8, i8, sub_assign);
+            atomic_int!(atomic_xsub_seqcst__i16, i16, sub_assign);
+            atomic_int!(atomic_xsub_seqcst__i32, i32, sub_assign);
+            atomic_int!(atomic_xsub_seqcst__i64, i64, sub_assign);
+            atomic_int!(atomic_xsub_seqcst__isize, isize, sub_assign);
+            atomic_int!(atomic_xsub_seqcst__u8, u8, sub_assign);
+            atomic_int!(atomic_xsub_seqcst__u16, u16, sub_assign);
+            atomic_int!(atomic_xsub_seqcst__u32, u32, sub_assign);
+            atomic_int!(atomic_xsub_seqcst__u64, u64, sub_assign);
+            atomic_int!(atomic_xsub_seqcst__usize, usize, sub_assign);
+            atomic_int!(atomic_xsub_seqcst__i128, i128, sub_assign);
+            atomic_int!(atomic_xsub_seqcst__u128, u128, sub_assign);
 
             // pub unsafe fn atomic_xsub_acquire<T>(dst: *mut T, src: T) -> T
             // where
@@ -1819,18 +1826,18 @@ pub mod core {
             //     *dst -= src;
             //     result
             // }
-            atomic_int!(atomic_xsub_acquire__i8, i8, -=);
-            atomic_int!(atomic_xsub_acquire__i16, i16, -=);
-            atomic_int!(atomic_xsub_acquire__i32, i32, -=);
-            atomic_int!(atomic_xsub_acquire__i64, i64, -=);
-            atomic_int!(atomic_xsub_acquire__isize, isize, -=);
-            atomic_int!(atomic_xsub_acquire__u8, u8, -=);
-            atomic_int!(atomic_xsub_acquire__u16, u16, -=);
-            atomic_int!(atomic_xsub_acquire__u32, u32, -=);
-            atomic_int!(atomic_xsub_acquire__u64, u64, -=);
-            atomic_int!(atomic_xsub_acquire__usize, usize, -=);
-            atomic_int!(atomic_xsub_acquire__i128, i128, -=);
-            atomic_int!(atomic_xsub_acquire__u128, u128, -=);
+            atomic_int!(atomic_xsub_acquire__i8, i8, sub_assign);
+            atomic_int!(atomic_xsub_acquire__i16, i16, sub_assign);
+            atomic_int!(atomic_xsub_acquire__i32, i32, sub_assign);
+            atomic_int!(atomic_xsub_acquire__i64, i64, sub_assign);
+            atomic_int!(atomic_xsub_acquire__isize, isize, sub_assign);
+            atomic_int!(atomic_xsub_acquire__u8, u8, sub_assign);
+            atomic_int!(atomic_xsub_acquire__u16, u16, sub_assign);
+            atomic_int!(atomic_xsub_acquire__u32, u32, sub_assign);
+            atomic_int!(atomic_xsub_acquire__u64, u64, sub_assign);
+            atomic_int!(atomic_xsub_acquire__usize, usize, sub_assign);
+            atomic_int!(atomic_xsub_acquire__i128, i128, sub_assign);
+            atomic_int!(atomic_xsub_acquire__u128, u128, sub_assign);
 
             // pub unsafe fn atomic_xsub_release<T>(dst: *mut T, src: T) -> T
             // where
@@ -1841,18 +1848,18 @@ pub mod core {
             //     *dst -= src;
             //     result
             // }
-            atomic_int!(atomic_xsub_release__i8, i8, -=);
-            atomic_int!(atomic_xsub_release__i16, i16, -=);
-            atomic_int!(atomic_xsub_release__i32, i32, -=);
-            atomic_int!(atomic_xsub_release__i64, i64, -=);
-            atomic_int!(atomic_xsub_release__isize, isize, -=);
-            atomic_int!(atomic_xsub_release__u8, u8, -=);
-            atomic_int!(atomic_xsub_release__u16, u16, -=);
-            atomic_int!(atomic_xsub_release__u32, u32, -=);
-            atomic_int!(atomic_xsub_release__u64, u64, -=);
-            atomic_int!(atomic_xsub_release__usize, usize, -=);
-            atomic_int!(atomic_xsub_release__i128, i128, -=);
-            atomic_int!(atomic_xsub_release__u128, u128, -=);
+            atomic_int!(atomic_xsub_release__i8, i8, sub_assign);
+            atomic_int!(atomic_xsub_release__i16, i16, sub_assign);
+            atomic_int!(atomic_xsub_release__i32, i32, sub_assign);
+            atomic_int!(atomic_xsub_release__i64, i64, sub_assign);
+            atomic_int!(atomic_xsub_release__isize, isize, sub_assign);
+            atomic_int!(atomic_xsub_release__u8, u8, sub_assign);
+            atomic_int!(atomic_xsub_release__u16, u16, sub_assign);
+            atomic_int!(atomic_xsub_release__u32, u32, sub_assign);
+            atomic_int!(atomic_xsub_release__u64, u64, sub_assign);
+            atomic_int!(atomic_xsub_release__usize, usize, sub_assign);
+            atomic_int!(atomic_xsub_release__i128, i128, sub_assign);
+            atomic_int!(atomic_xsub_release__u128, u128, sub_assign);
 
             // pub unsafe fn atomic_xsub_acqrel<T>(dst: *mut T, src: T) -> T
             // where
@@ -1863,18 +1870,18 @@ pub mod core {
             //     *dst -= src;
             //     result
             // }
-            atomic_int!(atomic_xsub_acqrel__i8, i8, -=);
-            atomic_int!(atomic_xsub_acqrel__i16, i16, -=);
-            atomic_int!(atomic_xsub_acqrel__i32, i32, -=);
-            atomic_int!(atomic_xsub_acqrel__i64, i64, -=);
-            atomic_int!(atomic_xsub_acqrel__isize, isize, -=);
-            atomic_int!(atomic_xsub_acqrel__u8, u8, -=);
-            atomic_int!(atomic_xsub_acqrel__u16, u16, -=);
-            atomic_int!(atomic_xsub_acqrel__u32, u32, -=);
-            atomic_int!(atomic_xsub_acqrel__u64, u64, -=);
-            atomic_int!(atomic_xsub_acqrel__usize, usize, -=);
-            atomic_int!(atomic_xsub_acqrel__i128, i128, -=);
-            atomic_int!(atomic_xsub_acqrel__u128, u128, -=);
+            atomic_int!(atomic_xsub_acqrel__i8, i8, sub_assign);
+            atomic_int!(atomic_xsub_acqrel__i16, i16, sub_assign);
+            atomic_int!(atomic_xsub_acqrel__i32, i32, sub_assign);
+            atomic_int!(atomic_xsub_acqrel__i64, i64, sub_assign);
+            atomic_int!(atomic_xsub_acqrel__isize, isize, sub_assign);
+            atomic_int!(atomic_xsub_acqrel__u8, u8, sub_assign);
+            atomic_int!(atomic_xsub_acqrel__u16, u16, sub_assign);
+            atomic_int!(atomic_xsub_acqrel__u32, u32, sub_assign);
+            atomic_int!(atomic_xsub_acqrel__u64, u64, sub_assign);
+            atomic_int!(atomic_xsub_acqrel__usize, usize, sub_assign);
+            atomic_int!(atomic_xsub_acqrel__i128, i128, sub_assign);
+            atomic_int!(atomic_xsub_acqrel__u128, u128, sub_assign);
 
             // pub unsafe fn atomic_xsub_relaxed<T>(dst: *mut T, src: T) -> T
             // where
@@ -1885,18 +1892,18 @@ pub mod core {
             //     *dst -= src;
             //     result
             // }
-            atomic_int!(atomic_xsub_relaxed__i8, i8, -=);
-            atomic_int!(atomic_xsub_relaxed__i16, i16, -=);
-            atomic_int!(atomic_xsub_relaxed__i32, i32, -=);
-            atomic_int!(atomic_xsub_relaxed__i64, i64, -=);
-            atomic_int!(atomic_xsub_relaxed__isize, isize, -=);
-            atomic_int!(atomic_xsub_relaxed__u8, u8, -=);
-            atomic_int!(atomic_xsub_relaxed__u16, u16, -=);
-            atomic_int!(atomic_xsub_relaxed__u32, u32, -=);
-            atomic_int!(atomic_xsub_relaxed__u64, u64, -=);
-            atomic_int!(atomic_xsub_relaxed__usize, usize, -=);
-            atomic_int!(atomic_xsub_relaxed__i128, i128, -=);
-            atomic_int!(atomic_xsub_relaxed__u128, u128, -=);
+            atomic_int!(atomic_xsub_relaxed__i8, i8, sub_assign);
+            atomic_int!(atomic_xsub_relaxed__i16, i16, sub_assign);
+            atomic_int!(atomic_xsub_relaxed__i32, i32, sub_assign);
+            atomic_int!(atomic_xsub_relaxed__i64, i64, sub_assign);
+            atomic_int!(atomic_xsub_relaxed__isize, isize, sub_assign);
+            atomic_int!(atomic_xsub_relaxed__u8, u8, sub_assign);
+            atomic_int!(atomic_xsub_relaxed__u16, u16, sub_assign);
+            atomic_int!(atomic_xsub_relaxed__u32, u32, sub_assign);
+            atomic_int!(atomic_xsub_relaxed__u64, u64, sub_assign);
+            atomic_int!(atomic_xsub_relaxed__usize, usize, sub_assign);
+            atomic_int!(atomic_xsub_relaxed__i128, i128, sub_assign);
+            atomic_int!(atomic_xsub_relaxed__u128, u128, sub_assign);
 
             // pub unsafe fn atomic_and_seqcst<T>(dst: *mut T, src: T) -> T
             // where
@@ -1907,18 +1914,18 @@ pub mod core {
             //     *dst &= src;
             //     result
             // }
-            atomic_int!(atomic_and_seqcst__i8, i8, &=);
-            atomic_int!(atomic_and_seqcst__i16, i16, &=);
-            atomic_int!(atomic_and_seqcst__i32, i32, &=);
-            atomic_int!(atomic_and_seqcst__i64, i64, &=);
-            atomic_int!(atomic_and_seqcst__isize, isize, &=);
-            atomic_int!(atomic_and_seqcst__u8, u8, &=);
-            atomic_int!(atomic_and_seqcst__u16, u16, &=);
-            atomic_int!(atomic_and_seqcst__u32, u32, &=);
-            atomic_int!(atomic_and_seqcst__u64, u64, &=);
-            atomic_int!(atomic_and_seqcst__usize, usize, &=);
-            atomic_int!(atomic_and_seqcst__i128, i128, &=);
-            atomic_int!(atomic_and_seqcst__u128, u128, &=);
+            atomic_int!(atomic_and_seqcst__i8, i8, bitand_assign);
+            atomic_int!(atomic_and_seqcst__i16, i16, bitand_assign);
+            atomic_int!(atomic_and_seqcst__i32, i32, bitand_assign);
+            atomic_int!(atomic_and_seqcst__i64, i64, bitand_assign);
+            atomic_int!(atomic_and_seqcst__isize, isize, bitand_assign);
+            atomic_int!(atomic_and_seqcst__u8, u8, bitand_assign);
+            atomic_int!(atomic_and_seqcst__u16, u16, bitand_assign);
+            atomic_int!(atomic_and_seqcst__u32, u32, bitand_assign);
+            atomic_int!(atomic_and_seqcst__u64, u64, bitand_assign);
+            atomic_int!(atomic_and_seqcst__usize, usize, bitand_assign);
+            atomic_int!(atomic_and_seqcst__i128, i128, bitand_assign);
+            atomic_int!(atomic_and_seqcst__u128, u128, bitand_assign);
 
             // pub unsafe fn atomic_and_acquire<T>(dst: *mut T, src: T) -> T
             // where
@@ -1929,18 +1936,18 @@ pub mod core {
             //     *dst &= src;
             //     result
             // }
-            atomic_int!(atomic_and_acquire__i8, i8, &=);
-            atomic_int!(atomic_and_acquire__i16, i16, &=);
-            atomic_int!(atomic_and_acquire__i32, i32, &=);
-            atomic_int!(atomic_and_acquire__i64, i64, &=);
-            atomic_int!(atomic_and_acquire__isize, isize, &=);
-            atomic_int!(atomic_and_acquire__u8, u8, &=);
-            atomic_int!(atomic_and_acquire__u16, u16, &=);
-            atomic_int!(atomic_and_acquire__u32, u32, &=);
-            atomic_int!(atomic_and_acquire__u64, u64, &=);
-            atomic_int!(atomic_and_acquire__usize, usize, &=);
-            atomic_int!(atomic_and_acquire__i128, i128, &=);
-            atomic_int!(atomic_and_acquire__u128, u128, &=);
+            atomic_int!(atomic_and_acquire__i8, i8, bitand_assign);
+            atomic_int!(atomic_and_acquire__i16, i16, bitand_assign);
+            atomic_int!(atomic_and_acquire__i32, i32, bitand_assign);
+            atomic_int!(atomic_and_acquire__i64, i64, bitand_assign);
+            atomic_int!(atomic_and_acquire__isize, isize, bitand_assign);
+            atomic_int!(atomic_and_acquire__u8, u8, bitand_assign);
+            atomic_int!(atomic_and_acquire__u16, u16, bitand_assign);
+            atomic_int!(atomic_and_acquire__u32, u32, bitand_assign);
+            atomic_int!(atomic_and_acquire__u64, u64, bitand_assign);
+            atomic_int!(atomic_and_acquire__usize, usize, bitand_assign);
+            atomic_int!(atomic_and_acquire__i128, i128, bitand_assign);
+            atomic_int!(atomic_and_acquire__u128, u128, bitand_assign);
 
             // pub unsafe fn atomic_and_release<T>(dst: *mut T, src: T) -> T
             // where
@@ -1951,18 +1958,18 @@ pub mod core {
             //     *dst &= src;
             //     result
             // }
-            atomic_int!(atomic_and_release__i8, i8, &=);
-            atomic_int!(atomic_and_release__i16, i16, &=);
-            atomic_int!(atomic_and_release__i32, i32, &=);
-            atomic_int!(atomic_and_release__i64, i64, &=);
-            atomic_int!(atomic_and_release__isize, isize, &=);
-            atomic_int!(atomic_and_release__u8, u8, &=);
-            atomic_int!(atomic_and_release__u16, u16, &=);
-            atomic_int!(atomic_and_release__u32, u32, &=);
-            atomic_int!(atomic_and_release__u64, u64, &=);
-            atomic_int!(atomic_and_release__usize, usize, &=);
-            atomic_int!(atomic_and_release__i128, i128, &=);
-            atomic_int!(atomic_and_release__u128, u128, &=);
+            atomic_int!(atomic_and_release__i8, i8, bitand_assign);
+            atomic_int!(atomic_and_release__i16, i16, bitand_assign);
+            atomic_int!(atomic_and_release__i32, i32, bitand_assign);
+            atomic_int!(atomic_and_release__i64, i64, bitand_assign);
+            atomic_int!(atomic_and_release__isize, isize, bitand_assign);
+            atomic_int!(atomic_and_release__u8, u8, bitand_assign);
+            atomic_int!(atomic_and_release__u16, u16, bitand_assign);
+            atomic_int!(atomic_and_release__u32, u32, bitand_assign);
+            atomic_int!(atomic_and_release__u64, u64, bitand_assign);
+            atomic_int!(atomic_and_release__usize, usize, bitand_assign);
+            atomic_int!(atomic_and_release__i128, i128, bitand_assign);
+            atomic_int!(atomic_and_release__u128, u128, bitand_assign);
 
             // pub unsafe fn atomic_and_acqrel<T>(dst: *mut T, src: T) -> T
             // where
@@ -1973,18 +1980,18 @@ pub mod core {
             //     *dst &= src;
             //     result
             // }
-            atomic_int!(atomic_and_acqrel__i8, i8, &=);
-            atomic_int!(atomic_and_acqrel__i16, i16, &=);
-            atomic_int!(atomic_and_acqrel__i32, i32, &=);
-            atomic_int!(atomic_and_acqrel__i64, i64, &=);
-            atomic_int!(atomic_and_acqrel__isize, isize, &=);
-            atomic_int!(atomic_and_acqrel__u8, u8, &=);
-            atomic_int!(atomic_and_acqrel__u16, u16, &=);
-            atomic_int!(atomic_and_acqrel__u32, u32, &=);
-            atomic_int!(atomic_and_acqrel__u64, u64, &=);
-            atomic_int!(atomic_and_acqrel__usize, usize, &=);
-            atomic_int!(atomic_and_acqrel__i128, i128, &=);
-            atomic_int!(atomic_and_acqrel__u128, u128, &=);
+            atomic_int!(atomic_and_acqrel__i8, i8, bitand_assign);
+            atomic_int!(atomic_and_acqrel__i16, i16, bitand_assign);
+            atomic_int!(atomic_and_acqrel__i32, i32, bitand_assign);
+            atomic_int!(atomic_and_acqrel__i64, i64, bitand_assign);
+            atomic_int!(atomic_and_acqrel__isize, isize, bitand_assign);
+            atomic_int!(atomic_and_acqrel__u8, u8, bitand_assign);
+            atomic_int!(atomic_and_acqrel__u16, u16, bitand_assign);
+            atomic_int!(atomic_and_acqrel__u32, u32, bitand_assign);
+            atomic_int!(atomic_and_acqrel__u64, u64, bitand_assign);
+            atomic_int!(atomic_and_acqrel__usize, usize, bitand_assign);
+            atomic_int!(atomic_and_acqrel__i128, i128, bitand_assign);
+            atomic_int!(atomic_and_acqrel__u128, u128, bitand_assign);
 
             // pub unsafe fn atomic_and_relaxed<T>(dst: *mut T, src: T) -> T
             // where
@@ -1995,18 +2002,18 @@ pub mod core {
             //     *dst &= src;
             //     result
             // }
-            atomic_int!(atomic_and_relaxed__i8, i8, &=);
-            atomic_int!(atomic_and_relaxed__i16, i16, &=);
-            atomic_int!(atomic_and_relaxed__i32, i32, &=);
-            atomic_int!(atomic_and_relaxed__i64, i64, &=);
-            atomic_int!(atomic_and_relaxed__isize, isize, &=);
-            atomic_int!(atomic_and_relaxed__u8, u8, &=);
-            atomic_int!(atomic_and_relaxed__u16, u16, &=);
-            atomic_int!(atomic_and_relaxed__u32, u32, &=);
-            atomic_int!(atomic_and_relaxed__u64, u64, &=);
-            atomic_int!(atomic_and_relaxed__usize, usize, &=);
-            atomic_int!(atomic_and_relaxed__i128, i128, &=);
-            atomic_int!(atomic_and_relaxed__u128, u128, &=);
+            atomic_int!(atomic_and_relaxed__i8, i8, bitand_assign);
+            atomic_int!(atomic_and_relaxed__i16, i16, bitand_assign);
+            atomic_int!(atomic_and_relaxed__i32, i32, bitand_assign);
+            atomic_int!(atomic_and_relaxed__i64, i64, bitand_assign);
+            atomic_int!(atomic_and_relaxed__isize, isize, bitand_assign);
+            atomic_int!(atomic_and_relaxed__u8, u8, bitand_assign);
+            atomic_int!(atomic_and_relaxed__u16, u16, bitand_assign);
+            atomic_int!(atomic_and_relaxed__u32, u32, bitand_assign);
+            atomic_int!(atomic_and_relaxed__u64, u64, bitand_assign);
+            atomic_int!(atomic_and_relaxed__usize, usize, bitand_assign);
+            atomic_int!(atomic_and_relaxed__i128, i128, bitand_assign);
+            atomic_int!(atomic_and_relaxed__u128, u128, bitand_assign);
 
             // pub unsafe fn atomic_nand_seqcst<T>(dst: *mut T, src: T) -> T
             // where
@@ -2122,18 +2129,18 @@ pub mod core {
             //     *dst |= src;
             //     result
             // }
-            atomic_int!(atomic_or_seqcst__i8, i8, |=);
-            atomic_int!(atomic_or_seqcst__i16, i16, |=);
-            atomic_int!(atomic_or_seqcst__i32, i32, |=);
-            atomic_int!(atomic_or_seqcst__i64, i64, |=);
-            atomic_int!(atomic_or_seqcst__isize, isize, |=);
-            atomic_int!(atomic_or_seqcst__u8, u8, |=);
-            atomic_int!(atomic_or_seqcst__u16, u16, |=);
-            atomic_int!(atomic_or_seqcst__u32, u32, |=);
-            atomic_int!(atomic_or_seqcst__u64, u64, |=);
-            atomic_int!(atomic_or_seqcst__usize, usize, |=);
-            atomic_int!(atomic_or_seqcst__i128, i128, |=);
-            atomic_int!(atomic_or_seqcst__u128, u128, |=);
+            atomic_int!(atomic_or_seqcst__i8, i8, bitor_assign);
+            atomic_int!(atomic_or_seqcst__i16, i16, bitor_assign);
+            atomic_int!(atomic_or_seqcst__i32, i32, bitor_assign);
+            atomic_int!(atomic_or_seqcst__i64, i64, bitor_assign);
+            atomic_int!(atomic_or_seqcst__isize, isize, bitor_assign);
+            atomic_int!(atomic_or_seqcst__u8, u8, bitor_assign);
+            atomic_int!(atomic_or_seqcst__u16, u16, bitor_assign);
+            atomic_int!(atomic_or_seqcst__u32, u32, bitor_assign);
+            atomic_int!(atomic_or_seqcst__u64, u64, bitor_assign);
+            atomic_int!(atomic_or_seqcst__usize, usize, bitor_assign);
+            atomic_int!(atomic_or_seqcst__i128, i128, bitor_assign);
+            atomic_int!(atomic_or_seqcst__u128, u128, bitor_assign);
 
             // pub unsafe fn atomic_or_acquire<T>(dst: *mut T, src: T) -> T
             // where
@@ -2144,18 +2151,18 @@ pub mod core {
             //     *dst |= src;
             //     result
             // }
-            atomic_int!(atomic_or_acquire__i8, i8, |=);
-            atomic_int!(atomic_or_acquire__i16, i16, |=);
-            atomic_int!(atomic_or_acquire__i32, i32, |=);
-            atomic_int!(atomic_or_acquire__i64, i64, |=);
-            atomic_int!(atomic_or_acquire__isize, isize, |=);
-            atomic_int!(atomic_or_acquire__u8, u8, |=);
-            atomic_int!(atomic_or_acquire__u16, u16, |=);
-            atomic_int!(atomic_or_acquire__u32, u32, |=);
-            atomic_int!(atomic_or_acquire__u64, u64, |=);
-            atomic_int!(atomic_or_acquire__usize, usize, |=);
-            atomic_int!(atomic_or_acquire__i128, i128, |=);
-            atomic_int!(atomic_or_acquire__u128, u128, |=);
+            atomic_int!(atomic_or_acquire__i8, i8, bitor_assign);
+            atomic_int!(atomic_or_acquire__i16, i16, bitor_assign);
+            atomic_int!(atomic_or_acquire__i32, i32, bitor_assign);
+            atomic_int!(atomic_or_acquire__i64, i64, bitor_assign);
+            atomic_int!(atomic_or_acquire__isize, isize, bitor_assign);
+            atomic_int!(atomic_or_acquire__u8, u8, bitor_assign);
+            atomic_int!(atomic_or_acquire__u16, u16, bitor_assign);
+            atomic_int!(atomic_or_acquire__u32, u32, bitor_assign);
+            atomic_int!(atomic_or_acquire__u64, u64, bitor_assign);
+            atomic_int!(atomic_or_acquire__usize, usize, bitor_assign);
+            atomic_int!(atomic_or_acquire__i128, i128, bitor_assign);
+            atomic_int!(atomic_or_acquire__u128, u128, bitor_assign);
 
             // pub unsafe fn atomic_or_release<T>(dst: *mut T, src: T) -> T
             // where
@@ -2166,18 +2173,18 @@ pub mod core {
             //     *dst |= src;
             //     result
             // }
-            atomic_int!(atomic_or_release__i8, i8, |=);
-            atomic_int!(atomic_or_release__i16, i16, |=);
-            atomic_int!(atomic_or_release__i32, i32, |=);
-            atomic_int!(atomic_or_release__i64, i64, |=);
-            atomic_int!(atomic_or_release__isize, isize, |=);
-            atomic_int!(atomic_or_release__u8, u8, |=);
-            atomic_int!(atomic_or_release__u16, u16, |=);
-            atomic_int!(atomic_or_release__u32, u32, |=);
-            atomic_int!(atomic_or_release__u64, u64, |=);
-            atomic_int!(atomic_or_release__usize, usize, |=);
-            atomic_int!(atomic_or_release__i128, i128, |=);
-            atomic_int!(atomic_or_release__u128, u128, |=);
+            atomic_int!(atomic_or_release__i8, i8, bitor_assign);
+            atomic_int!(atomic_or_release__i16, i16, bitor_assign);
+            atomic_int!(atomic_or_release__i32, i32, bitor_assign);
+            atomic_int!(atomic_or_release__i64, i64, bitor_assign);
+            atomic_int!(atomic_or_release__isize, isize, bitor_assign);
+            atomic_int!(atomic_or_release__u8, u8, bitor_assign);
+            atomic_int!(atomic_or_release__u16, u16, bitor_assign);
+            atomic_int!(atomic_or_release__u32, u32, bitor_assign);
+            atomic_int!(atomic_or_release__u64, u64, bitor_assign);
+            atomic_int!(atomic_or_release__usize, usize, bitor_assign);
+            atomic_int!(atomic_or_release__i128, i128, bitor_assign);
+            atomic_int!(atomic_or_release__u128, u128, bitor_assign);
 
             // pub unsafe fn atomic_or_acqrel<T>(dst: *mut T, src: T) -> T
             // where
@@ -2188,18 +2195,18 @@ pub mod core {
             //     *dst |= src;
             //     result
             // }
-            atomic_int!(atomic_or_acqrel__i8, i8, |=);
-            atomic_int!(atomic_or_acqrel__i16, i16, |=);
-            atomic_int!(atomic_or_acqrel__i32, i32, |=);
-            atomic_int!(atomic_or_acqrel__i64, i64, |=);
-            atomic_int!(atomic_or_acqrel__isize, isize, |=);
-            atomic_int!(atomic_or_acqrel__u8, u8, |=);
-            atomic_int!(atomic_or_acqrel__u16, u16, |=);
-            atomic_int!(atomic_or_acqrel__u32, u32, |=);
-            atomic_int!(atomic_or_acqrel__u64, u64, |=);
-            atomic_int!(atomic_or_acqrel__usize, usize, |=);
-            atomic_int!(atomic_or_acqrel__i128, i128, |=);
-            atomic_int!(atomic_or_acqrel__u128, u128, |=);
+            atomic_int!(atomic_or_acqrel__i8, i8, bitor_assign);
+            atomic_int!(atomic_or_acqrel__i16, i16, bitor_assign);
+            atomic_int!(atomic_or_acqrel__i32, i32, bitor_assign);
+            atomic_int!(atomic_or_acqrel__i64, i64, bitor_assign);
+            atomic_int!(atomic_or_acqrel__isize, isize, bitor_assign);
+            atomic_int!(atomic_or_acqrel__u8, u8, bitor_assign);
+            atomic_int!(atomic_or_acqrel__u16, u16, bitor_assign);
+            atomic_int!(atomic_or_acqrel__u32, u32, bitor_assign);
+            atomic_int!(atomic_or_acqrel__u64, u64, bitor_assign);
+            atomic_int!(atomic_or_acqrel__usize, usize, bitor_assign);
+            atomic_int!(atomic_or_acqrel__i128, i128, bitor_assign);
+            atomic_int!(atomic_or_acqrel__u128, u128, bitor_assign);
 
             // pub unsafe fn atomic_or_relaxed<T>(dst: *mut T, src: T) -> T
             // where
@@ -2210,18 +2217,18 @@ pub mod core {
             //     *dst |= src;
             //     result
             // }
-            atomic_int!(atomic_or_relaxed__i8, i8, |=);
-            atomic_int!(atomic_or_relaxed__i16, i16, |=);
-            atomic_int!(atomic_or_relaxed__i32, i32, |=);
-            atomic_int!(atomic_or_relaxed__i64, i64, |=);
-            atomic_int!(atomic_or_relaxed__isize, isize, |=);
-            atomic_int!(atomic_or_relaxed__u8, u8, |=);
-            atomic_int!(atomic_or_relaxed__u16, u16, |=);
-            atomic_int!(atomic_or_relaxed__u32, u32, |=);
-            atomic_int!(atomic_or_relaxed__u64, u64, |=);
-            atomic_int!(atomic_or_relaxed__usize, usize, |=);
-            atomic_int!(atomic_or_relaxed__i128, i128, |=);
-            atomic_int!(atomic_or_relaxed__u128, u128, |=);
+            atomic_int!(atomic_or_relaxed__i8, i8, bitor_assign);
+            atomic_int!(atomic_or_relaxed__i16, i16, bitor_assign);
+            atomic_int!(atomic_or_relaxed__i32, i32, bitor_assign);
+            atomic_int!(atomic_or_relaxed__i64, i64, bitor_assign);
+            atomic_int!(atomic_or_relaxed__isize, isize, bitor_assign);
+            atomic_int!(atomic_or_relaxed__u8, u8, bitor_assign);
+            atomic_int!(atomic_or_relaxed__u16, u16, bitor_assign);
+            atomic_int!(atomic_or_relaxed__u32, u32, bitor_assign);
+            atomic_int!(atomic_or_relaxed__u64, u64, bitor_assign);
+            atomic_int!(atomic_or_relaxed__usize, usize, bitor_assign);
+            atomic_int!(atomic_or_relaxed__i128, i128, bitor_assign);
+            atomic_int!(atomic_or_relaxed__u128, u128, bitor_assign);
 
             // pub unsafe fn atomic_xor_seqcst<T>(dst: *mut T, src: T) -> T
             // where
@@ -2232,18 +2239,18 @@ pub mod core {
             //     *dst ^= src;
             //     result
             // }
-            atomic_int!(atomic_xor_seqcst__i8, i8, ^=);
-            atomic_int!(atomic_xor_seqcst__i16, i16, ^=);
-            atomic_int!(atomic_xor_seqcst__i32, i32, ^=);
-            atomic_int!(atomic_xor_seqcst__i64, i64, ^=);
-            atomic_int!(atomic_xor_seqcst__isize, isize, ^=);
-            atomic_int!(atomic_xor_seqcst__u8, u8, ^=);
-            atomic_int!(atomic_xor_seqcst__u16, u16, ^=);
-            atomic_int!(atomic_xor_seqcst__u32, u32, ^=);
-            atomic_int!(atomic_xor_seqcst__u64, u64, ^=);
-            atomic_int!(atomic_xor_seqcst__usize, usize, ^=);
-            atomic_int!(atomic_xor_seqcst__i128, i128, ^=);
-            atomic_int!(atomic_xor_seqcst__u128, u128, ^=);
+            atomic_int!(atomic_xor_seqcst__i8, i8, bitxor_assign);
+            atomic_int!(atomic_xor_seqcst__i16, i16, bitxor_assign);
+            atomic_int!(atomic_xor_seqcst__i32, i32, bitxor_assign);
+            atomic_int!(atomic_xor_seqcst__i64, i64, bitxor_assign);
+            atomic_int!(atomic_xor_seqcst__isize, isize, bitxor_assign);
+            atomic_int!(atomic_xor_seqcst__u8, u8, bitxor_assign);
+            atomic_int!(atomic_xor_seqcst__u16, u16, bitxor_assign);
+            atomic_int!(atomic_xor_seqcst__u32, u32, bitxor_assign);
+            atomic_int!(atomic_xor_seqcst__u64, u64, bitxor_assign);
+            atomic_int!(atomic_xor_seqcst__usize, usize, bitxor_assign);
+            atomic_int!(atomic_xor_seqcst__i128, i128, bitxor_assign);
+            atomic_int!(atomic_xor_seqcst__u128, u128, bitxor_assign);
 
             // pub unsafe fn atomic_xor_acquire<T>(dst: *mut T, src: T) -> T
             // where
@@ -2254,18 +2261,18 @@ pub mod core {
             //     *dst ^= src;
             //     result
             // }
-            atomic_int!(atomic_xor_acquire__i8, i8, ^=);
-            atomic_int!(atomic_xor_acquire__i16, i16, ^=);
-            atomic_int!(atomic_xor_acquire__i32, i32, ^=);
-            atomic_int!(atomic_xor_acquire__i64, i64, ^=);
-            atomic_int!(atomic_xor_acquire__isize, isize, ^=);
-            atomic_int!(atomic_xor_acquire__u8, u8, ^=);
-            atomic_int!(atomic_xor_acquire__u16, u16, ^=);
-            atomic_int!(atomic_xor_acquire__u32, u32, ^=);
-            atomic_int!(atomic_xor_acquire__u64, u64, ^=);
-            atomic_int!(atomic_xor_acquire__usize, usize, ^=);
-            atomic_int!(atomic_xor_acquire__i128, i128, ^=);
-            atomic_int!(atomic_xor_acquire__u128, u128, ^=);
+            atomic_int!(atomic_xor_acquire__i8, i8, bitxor_assign);
+            atomic_int!(atomic_xor_acquire__i16, i16, bitxor_assign);
+            atomic_int!(atomic_xor_acquire__i32, i32, bitxor_assign);
+            atomic_int!(atomic_xor_acquire__i64, i64, bitxor_assign);
+            atomic_int!(atomic_xor_acquire__isize, isize, bitxor_assign);
+            atomic_int!(atomic_xor_acquire__u8, u8, bitxor_assign);
+            atomic_int!(atomic_xor_acquire__u16, u16, bitxor_assign);
+            atomic_int!(atomic_xor_acquire__u32, u32, bitxor_assign);
+            atomic_int!(atomic_xor_acquire__u64, u64, bitxor_assign);
+            atomic_int!(atomic_xor_acquire__usize, usize, bitxor_assign);
+            atomic_int!(atomic_xor_acquire__i128, i128, bitxor_assign);
+            atomic_int!(atomic_xor_acquire__u128, u128, bitxor_assign);
 
             // pub unsafe fn atomic_xor_release<T>(dst: *mut T, src: T) -> T
             // where
@@ -2276,18 +2283,18 @@ pub mod core {
             //     *dst ^= src;
             //     result
             // }
-            atomic_int!(atomic_xor_release__i8, i8, ^=);
-            atomic_int!(atomic_xor_release__i16, i16, ^=);
-            atomic_int!(atomic_xor_release__i32, i32, ^=);
-            atomic_int!(atomic_xor_release__i64, i64, ^=);
-            atomic_int!(atomic_xor_release__isize, isize, ^=);
-            atomic_int!(atomic_xor_release__u8, u8, ^=);
-            atomic_int!(atomic_xor_release__u16, u16, ^=);
-            atomic_int!(atomic_xor_release__u32, u32, ^=);
-            atomic_int!(atomic_xor_release__u64, u64, ^=);
-            atomic_int!(atomic_xor_release__usize, usize, ^=);
-            atomic_int!(atomic_xor_release__i128, i128, ^=);
-            atomic_int!(atomic_xor_release__u128, u128, ^=);
+            atomic_int!(atomic_xor_release__i8, i8, bitxor_assign);
+            atomic_int!(atomic_xor_release__i16, i16, bitxor_assign);
+            atomic_int!(atomic_xor_release__i32, i32, bitxor_assign);
+            atomic_int!(atomic_xor_release__i64, i64, bitxor_assign);
+            atomic_int!(atomic_xor_release__isize, isize, bitxor_assign);
+            atomic_int!(atomic_xor_release__u8, u8, bitxor_assign);
+            atomic_int!(atomic_xor_release__u16, u16, bitxor_assign);
+            atomic_int!(atomic_xor_release__u32, u32, bitxor_assign);
+            atomic_int!(atomic_xor_release__u64, u64, bitxor_assign);
+            atomic_int!(atomic_xor_release__usize, usize, bitxor_assign);
+            atomic_int!(atomic_xor_release__i128, i128, bitxor_assign);
+            atomic_int!(atomic_xor_release__u128, u128, bitxor_assign);
 
             // pub unsafe fn atomic_xor_acqrel<T>(dst: *mut T, src: T) -> T
             // where
@@ -2298,18 +2305,18 @@ pub mod core {
             //     *dst ^= src;
             //     result
             // }
-            atomic_int!(atomic_xor_acqrel__i8, i8, ^=);
-            atomic_int!(atomic_xor_acqrel__i16, i16, ^=);
-            atomic_int!(atomic_xor_acqrel__i32, i32, ^=);
-            atomic_int!(atomic_xor_acqrel__i64, i64, ^=);
-            atomic_int!(atomic_xor_acqrel__isize, isize, ^=);
-            atomic_int!(atomic_xor_acqrel__u8, u8, ^=);
-            atomic_int!(atomic_xor_acqrel__u16, u16, ^=);
-            atomic_int!(atomic_xor_acqrel__u32, u32, ^=);
-            atomic_int!(atomic_xor_acqrel__u64, u64, ^=);
-            atomic_int!(atomic_xor_acqrel__usize, usize, ^=);
-            atomic_int!(atomic_xor_acqrel__i128, i128, ^=);
-            atomic_int!(atomic_xor_acqrel__u128, u128, ^=);
+            atomic_int!(atomic_xor_acqrel__i8, i8, bitxor_assign);
+            atomic_int!(atomic_xor_acqrel__i16, i16, bitxor_assign);
+            atomic_int!(atomic_xor_acqrel__i32, i32, bitxor_assign);
+            atomic_int!(atomic_xor_acqrel__i64, i64, bitxor_assign);
+            atomic_int!(atomic_xor_acqrel__isize, isize, bitxor_assign);
+            atomic_int!(atomic_xor_acqrel__u8, u8, bitxor_assign);
+            atomic_int!(atomic_xor_acqrel__u16, u16, bitxor_assign);
+            atomic_int!(atomic_xor_acqrel__u32, u32, bitxor_assign);
+            atomic_int!(atomic_xor_acqrel__u64, u64, bitxor_assign);
+            atomic_int!(atomic_xor_acqrel__usize, usize, bitxor_assign);
+            atomic_int!(atomic_xor_acqrel__i128, i128, bitxor_assign);
+            atomic_int!(atomic_xor_acqrel__u128, u128, bitxor_assign);
 
             // pub unsafe fn atomic_xor_relaxed<T>(dst: *mut T, src: T) -> T
             // where
@@ -2320,18 +2327,18 @@ pub mod core {
             //     *dst ^= src;
             //     result
             // }
-            atomic_int!(atomic_xor_relaxed__i8, i8, ^=);
-            atomic_int!(atomic_xor_relaxed__i16, i16, ^=);
-            atomic_int!(atomic_xor_relaxed__i32, i32, ^=);
-            atomic_int!(atomic_xor_relaxed__i64, i64, ^=);
-            atomic_int!(atomic_xor_relaxed__isize, isize, ^=);
-            atomic_int!(atomic_xor_relaxed__u8, u8, ^=);
-            atomic_int!(atomic_xor_relaxed__u16, u16, ^=);
-            atomic_int!(atomic_xor_relaxed__u32, u32, ^=);
-            atomic_int!(atomic_xor_relaxed__u64, u64, ^=);
-            atomic_int!(atomic_xor_relaxed__usize, usize, ^=);
-            atomic_int!(atomic_xor_relaxed__i128, i128, ^=);
-            atomic_int!(atomic_xor_relaxed__u128, u128, ^=);
+            atomic_int!(atomic_xor_relaxed__i8, i8, bitxor_assign);
+            atomic_int!(atomic_xor_relaxed__i16, i16, bitxor_assign);
+            atomic_int!(atomic_xor_relaxed__i32, i32, bitxor_assign);
+            atomic_int!(atomic_xor_relaxed__i64, i64, bitxor_assign);
+            atomic_int!(atomic_xor_relaxed__isize, isize, bitxor_assign);
+            atomic_int!(atomic_xor_relaxed__u8, u8, bitxor_assign);
+            atomic_int!(atomic_xor_relaxed__u16, u16, bitxor_assign);
+            atomic_int!(atomic_xor_relaxed__u32, u32, bitxor_assign);
+            atomic_int!(atomic_xor_relaxed__u64, u64, bitxor_assign);
+            atomic_int!(atomic_xor_relaxed__usize, usize, bitxor_assign);
+            atomic_int!(atomic_xor_relaxed__i128, i128, bitxor_assign);
+            atomic_int!(atomic_xor_relaxed__u128, u128, bitxor_assign);
 
             // pub unsafe fn atomic_max_seqcst<T>(dst: *mut T, src: T) -> T
             // where
@@ -2787,7 +2794,9 @@ pub mod core {
                 // where ptr1 has been widened.
                 // precondition!((x as i128) - (y as i128) >= 0);
                 // precondition!((x as i128) - (y as i128) <= (usize::MAX as i128));
-                x - y
+                use ::std::num::Wrapping;
+                use std::ops::Sub;
+                Wrapping(x).sub(Wrapping(y)).0
             }
 
             unchecked_mul!(i8, i128, unchecked_mul__i8, i8::MAX);
@@ -3233,10 +3242,13 @@ pub mod core {
 
         pub mod implement_usize {
             pub fn checked_add(_self: usize, value: usize) -> Option<usize> {
-                if _self > max_value() - value {
+                use ::std::num::Wrapping;
+                use std::ops::Add;
+                use std::ops::Sub;
+                if _self > Wrapping(max_value()).sub(Wrapping(value)).0 {
                     None
                 } else {
-                    Some(_self + value)
+                    Some(Wrapping(_self).add(Wrapping(value)).0)
                 }
             }
 
@@ -3317,10 +3329,13 @@ pub mod core {
                 0
             }
             pub fn checked_add(_self: u8, value: u8) -> Option<u8> {
-                if _self > max_value() - value {
+                use ::std::num::Wrapping;
+                use std::ops::Add;
+                use std::ops::Sub;
+                if _self > Wrapping(max_value()).sub(Wrapping(value)).0 {
                     None
                 } else {
-                    Some(_self + value)
+                    Some(Wrapping(_self).add(Wrapping(value)).0)
                 }
             }
             pub fn is_power_of_two(n: u8) -> bool {
@@ -3438,7 +3453,9 @@ pub mod core {
         pub mod arith {
             pub mod Add {
                 pub fn add__usize_usize(x: usize, y: usize) -> usize {
-                    x + y
+                    use ::std::num::Wrapping;
+                    use std::ops::Add;
+                    Wrapping(x).add(Wrapping(y)).0
                 }
             }
         }
