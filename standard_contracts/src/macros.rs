@@ -7,7 +7,9 @@
 macro_rules! add_with_overflow {
     ($t:ty, $tt:ty, $n:ident, $m:expr ) => {
         pub fn $n(x: $t, y: $t) -> ($tt, bool) {
-            let result = (x as $tt) + (y as $tt);
+            use ::std::num::Wrapping;
+            use std::ops::Add;
+            let result = Wrapping(x as $tt).add(Wrapping(y as $tt)).0;
             (result % (($m as $tt) + 1), result > ($m as $tt))
         }
     };
@@ -16,8 +18,14 @@ macro_rules! add_with_overflow {
 macro_rules! atomic_int {
     ($n:ident, $t:ty, $op:tt) => {
         pub unsafe fn $n(dst: *mut $t, src: $t) -> $t {
+            use ::std::num::Wrapping;
+            use std::ops::AddAssign;
+            use std::ops::BitAndAssign;
+            use std::ops::BitOrAssign;
+            use std::ops::BitXorAssign;
+            use std::ops::SubAssign;
             let result = *dst;
-            *dst $op src;
+            Wrapping(*dst).$op(Wrapping(src));
             result
         }
     };
@@ -147,8 +155,10 @@ macro_rules! sub_with_overflow {
 macro_rules! unchecked_add {
     ($t:ty, $tt:ty, $n:ident, $m:expr ) => {
         pub fn $n(x: $t, y: $t) -> $t {
+            use ::std::num::Wrapping;
+            use std::ops::Add;
             precondition!((x as $tt) + (y as $tt) <= ($m as $tt));
-            x + y
+            Wrapping(x).add(Wrapping(y)).0
         }
     };
 }
@@ -156,8 +166,10 @@ macro_rules! unchecked_add {
 macro_rules! unchecked_div {
     ($t:ty, $n:ident) => {
         pub fn $n(x: $t, y: $t) -> $t {
+            use ::std::num::Wrapping;
+            use std::ops::Div;
             precondition!(y != 0);
-            x / y
+            Wrapping(x).div(Wrapping(y)).0
         }
     };
 }
@@ -165,9 +177,11 @@ macro_rules! unchecked_div {
 macro_rules! unchecked_signed_div {
     ($t:ty, $n:ident, $m:expr) => {
         pub fn $n(x: $t, y: $t) -> $t {
+            use ::std::num::Wrapping;
+            use std::ops::Div;
             precondition!(y != 0);
             precondition!(x != $m || y != -1);
-            x / y
+            Wrapping(x).div(Wrapping(y)).0
         }
     };
 }
@@ -175,8 +189,10 @@ macro_rules! unchecked_signed_div {
 macro_rules! unchecked_mul {
     ($t:ty, $tt:ty, $n:ident, $m:expr ) => {
         pub fn $n(x: $t, y: $t) -> $t {
+            use ::std::num::Wrapping;
+            use std::ops::Mul;
             precondition!((x as $tt) * (y as $tt) <= ($m as $tt));
-            x * y
+            Wrapping(x).mul(Wrapping(y)).0
         }
     };
 }
@@ -184,26 +200,32 @@ macro_rules! unchecked_mul {
 macro_rules! unchecked_rem {
     ($t:ty, $n:ident) => {
         pub fn $n(x: $t, y: $t) -> $t {
+            use ::std::num::Wrapping;
+            use std::ops::Rem;
             precondition!(y != 0);
-            x % y
+            Wrapping(x).rem(Wrapping(y)).0
         }
     };
 }
 
 macro_rules! unchecked_shl {
     ($t:ty, $n:ident) => {
-        pub fn $n(x: $t, y: $t) -> $t {
-            precondition!(y <= (std::intrinsics::size_of::<$t>() as $t));
-            x << y
+        pub fn $n(x: $t, y: usize) -> $t {
+            use ::std::num::Wrapping;
+            use std::ops::Shl;
+            precondition!(y <= std::intrinsics::size_of::<$t>());
+            Wrapping(x).shl(y).0
         }
     };
 }
 
 macro_rules! unchecked_shr {
     ($t:ty, $n:ident) => {
-        pub fn $n(x: $t, y: $t) -> $t {
-            precondition!(y <= (std::intrinsics::size_of::<$t>() as $t));
-            x >> y
+        pub fn $n(x: $t, y: usize) -> $t {
+            use ::std::num::Wrapping;
+            use std::ops::Shr;
+            precondition!(y <= std::intrinsics::size_of::<$t>());
+            Wrapping(x).shr(y).0
         }
     };
 }
@@ -211,9 +233,11 @@ macro_rules! unchecked_shr {
 macro_rules! unchecked_signed_rem {
     ($t:ty, $n:ident, $m:expr) => {
         pub fn $n(x: $t, y: $t) -> $t {
+            use ::std::num::Wrapping;
+            use std::ops::Rem;
             precondition!(y != 0);
             precondition!(x != $m || y != -1);
-            x % y
+            Wrapping(x).rem(Wrapping(y)).0
         }
     };
 }
@@ -221,9 +245,11 @@ macro_rules! unchecked_signed_rem {
 macro_rules! unchecked_sub {
     ($t:ty, $n:ident, $m:expr ) => {
         pub fn $n(x: $t, y: $t) -> $t {
-            precondition!((x as i128) - (y as i128) >= 0);
-            precondition!((x as i128) - (y as i128) <= ($m as i128));
-            x - y
+            use ::std::num::Wrapping;
+            use std::ops::Sub;
+            precondition!(Wrapping(x as i128).sub(Wrapping(y as i128)).0 >= 0);
+            precondition!(Wrapping(x as i128).sub(Wrapping(y as i128)).0 <= ($m as i128));
+            Wrapping(x).sub(Wrapping(y)).0
         }
     };
 }
@@ -231,7 +257,13 @@ macro_rules! unchecked_sub {
 macro_rules! wrapping_add {
     ($t:ty, $tt:ty, $n:ident, $m:expr ) => {
         pub fn $n(a: $t, b: $t) -> $tt {
-            ((a as $tt) + (b as $tt)) % (($m as $tt) + 1)
+            use ::std::num::Wrapping;
+            use std::ops::Add;
+            use std::ops::Rem;
+            Wrapping(a as $tt)
+                .add(Wrapping(b as $tt))
+                .rem(Wrapping($m as $tt).add(Wrapping::<$tt>(1)))
+                .0
         }
     };
 }
@@ -239,7 +271,14 @@ macro_rules! wrapping_add {
 macro_rules! wrapping_mul {
     ($t:ty, $tt:ty, $n:ident, $m:expr ) => {
         pub fn $n(a: $t, b: $t) -> $tt {
-            ((a as $tt) * (b as $tt)) % (($m as $tt) + 1)
+            use ::std::num::Wrapping;
+            use ::std::ops::Mul;
+            use std::ops::Add;
+            use std::ops::Rem;
+            Wrapping(a as $tt)
+                .mul(Wrapping(b as $tt))
+                .rem(Wrapping($m as $tt).add(Wrapping::<$tt>(1)))
+                .0
         }
     };
 }
@@ -247,7 +286,14 @@ macro_rules! wrapping_mul {
 macro_rules! wrapping_sub {
     ($t:ty, $tt:ty, $n:ident, $m:expr ) => {
         pub fn $n(a: $t, b: $t) -> $t {
-            (((a as $tt) + (-(b as $tt))) % (($m as $tt) + 1)) as $t
+            use ::std::num::Wrapping;
+            use ::std::ops::Sub;
+            use std::ops::Add;
+            use std::ops::Rem;
+            Wrapping(a as $tt)
+                .sub(Wrapping(b as $tt))
+                .rem(Wrapping($m as $tt).add(Wrapping::<$tt>(1)))
+                .0 as $t
         }
     };
 }

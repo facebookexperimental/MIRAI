@@ -182,5 +182,5 @@ jobs:
 
       - name: Run MIRAI on MIRAI
         run: |
-          cargo mirai
+          cargo mirai --no-default-features
 

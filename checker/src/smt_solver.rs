@@ -75,16 +75,18 @@ pub trait SmtSolver<SmtExpressionType> {
 #[derive(Default)]
 pub struct SolverStub {}
 
-impl SmtSolver<()> for SolverStub {
-    fn as_debug_string(&self, _: &()) -> String {
+impl SmtSolver<usize> for SolverStub {
+    fn as_debug_string(&self, _: &usize) -> String {
         String::from("not implemented")
     }
 
-    fn assert(&self, _: &()) {}
+    fn assert(&self, _: &usize) {}
 
     fn backtrack(&self) {}
 
-    fn get_as_smt_predicate(&self, _mirai_expression: &Expression) {}
+    fn get_as_smt_predicate(&self, _mirai_expression: &Expression) -> usize {
+        0
+    }
 
     fn get_model_as_string(&self) -> String {
         String::from("not implemented")
@@ -94,7 +96,9 @@ impl SmtSolver<()> for SolverStub {
         String::from("not implemented")
     }
 
-    fn invert_predicate(&self, _: &()) {}
+    fn invert_predicate(&self, _: &usize) -> usize {
+        0
+    }
 
     fn set_backtrack_position(&self) {}
 
