@@ -9,48 +9,54 @@
 
 use mirai_annotations::*;
 
-pub fn t1() {
+pub fn t1() -> u8 {
     unsafe {
         let a = std::alloc::alloc(std::alloc::Layout::from_size_align(4, 2).unwrap());
-        let _ = std::intrinsics::offset(a, -1); //~ effective offset is outside allocated range
+        let b = std::intrinsics::offset(a, -1); //~ effective offset is outside allocated range
+        *b
     }
 }
 
-pub fn t2() {
+pub fn t2() -> u8 {
     unsafe {
         let a = std::alloc::alloc(std::alloc::Layout::from_size_align(4, 2).unwrap());
         let b = std::intrinsics::arith_offset(a, -1);
-        let _ = std::intrinsics::offset(b, 1);
+        let c = std::intrinsics::offset(b, 1);
+        *c
     }
 }
 
-pub fn t3() {
+pub fn t3() -> u8 {
     unsafe {
         let a = std::alloc::alloc(std::alloc::Layout::from_size_align(4, 2).unwrap());
         let b = std::intrinsics::arith_offset(a, -2);
-        let _ = std::intrinsics::offset(b, 1); //~ effective offset is outside allocated range
+        let c = std::intrinsics::offset(b, 1); //~ effective offset is outside allocated range
+        *c
     }
 }
 
-pub fn t4() {
+pub fn t4() -> u8 {
     unsafe {
         let a = std::alloc::alloc(std::alloc::Layout::from_size_align(4, 2).unwrap());
-        let _ = std::intrinsics::offset(a, 6); //~ effective offset is outside allocated range
+        let b = std::intrinsics::offset(a, 6); //~ effective offset is outside allocated range
+        *b
     }
 }
 
-pub fn t5() {
+pub fn t5() -> u8 {
     unsafe {
         let a = std::alloc::alloc(std::alloc::Layout::from_size_align(4, 2).unwrap());
-        let _ = std::intrinsics::offset(a, 5);
+        let b = std::intrinsics::offset(a, 5);
+        *b
     }
 }
 
-pub fn t6() {
+pub fn t6() -> u8 {
     unsafe {
         let a1 = std::alloc::alloc(std::alloc::Layout::from_size_align(4, 2).unwrap());
         let a2 = std::alloc::realloc(a1, std::alloc::Layout::from_size_align(4, 2).unwrap(), 6);
-        let _ = std::intrinsics::offset(a2, 6);
+        let a3 = std::intrinsics::offset(a2, 6);
+        *a3
     }
 }
 
