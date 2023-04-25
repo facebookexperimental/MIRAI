@@ -1209,6 +1209,33 @@ impl Expression {
         )
     }
 
+    #[logfn_inputs(DEBUG)]
+    pub fn is_memory_reference(&self) -> bool {
+        match self {
+            Expression::Cast {
+                operand,
+                target_type,
+            }
+            | Expression::Transmute {
+                operand,
+                target_type,
+            } => {
+                *target_type == ExpressionType::ThinPointer
+                    || operand.expression.is_memory_reference()
+            }
+            Expression::HeapBlock { .. } => true,
+            Expression::Reference(..) => true,
+
+            Expression::InitialParameterValue { var_type, .. }
+            | Expression::Variable { var_type, .. } => *var_type == ExpressionType::ThinPointer,
+            Expression::Join { left, right } => {
+                left.expression.is_memory_reference() && right.expression.is_memory_reference()
+            }
+            Expression::WidenedJoin { operand, .. } => operand.expression.is_memory_reference(),
+            _ => false,
+        }
+    }
+
     /// Determines if the given expression is the compile time constant 0u128.
     #[logfn_inputs(TRACE)]
     pub fn is_zero(&self) -> bool {

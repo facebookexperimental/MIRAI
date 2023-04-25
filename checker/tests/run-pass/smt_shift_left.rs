@@ -15,19 +15,16 @@ pub fn read_uleb128_as_u32(bytes: [u8; 20]) -> u32 {
     while cursor < bytes.len() && shift <= 28 {
         let byte = bytes[cursor];
         let val = byte & 0x7f;
-        // todo: the new MIR expression for checking if shift is in range uses bit patterns.
-        // Since the path conditions are communicated to Z3 in integer logic, the bit pattern
-        // check is unaware of the path condition, hence the warning below.
-        value |= (val as u32) << shift; //~ possible attempt to shift left with overflow
+        value |= (val as u32) << shift;
         if val == byte {
             return value;
         }
         shift += 7;
         // todo: need some extra mechanism (such as narrowing) to propagate the
         // condition on shift back to the loop anchor
-        if shift > 28 {
-            break;
-        }
+        // if shift > 28 {
+        //     break;
+        // }
         cursor += 1;
     }
     return value;

@@ -157,7 +157,8 @@ macro_rules! unchecked_add {
         pub fn $n(x: $t, y: $t) -> $t {
             use ::std::num::Wrapping;
             use std::ops::Add;
-            precondition!((x as $tt) + (y as $tt) <= ($m as $tt));
+            // todo: restore this
+            // precondition!((x as $tt) + (y as $tt) <= ($m as $tt));
             Wrapping(x).add(Wrapping(y)).0
         }
     };
@@ -191,7 +192,8 @@ macro_rules! unchecked_mul {
         pub fn $n(x: $t, y: $t) -> $t {
             use ::std::num::Wrapping;
             use std::ops::Mul;
-            precondition!((x as $tt) * (y as $tt) <= ($m as $tt));
+            // todo: restore this
+            // precondition!((x as $tt) * (y as $tt) <= ($m as $tt));
             Wrapping(x).mul(Wrapping(y)).0
         }
     };

@@ -113,8 +113,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
         let mir = if tcx.is_const_fn_raw(def_id) {
             tcx.mir_for_ctfe(def_id)
         } else {
-            let id = rustc_middle::ty::WithOptConstParam::unknown(def_id);
-            let def = rustc_middle::ty::InstanceDef::Item(id);
+            let def = rustc_middle::ty::InstanceDef::Item(def_id);
             tcx.instance_mir(def)
         };
         crate_visitor.call_graph.add_root(def_id);

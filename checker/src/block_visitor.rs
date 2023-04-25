@@ -12,15 +12,16 @@ use std::rc::Rc;
 use log_derive::*;
 use mirai_annotations::*;
 use rustc_hir::def_id::DefId;
-use rustc_index::vec::Idx;
+use rustc_index::vec::{Idx, IndexVec};
 use rustc_middle::mir;
 use rustc_middle::mir::interpret::{alloc_range, ConstValue, GlobalAlloc, Scalar};
 use rustc_middle::ty::adjustment::PointerCast;
+use rustc_middle::ty::layout::LayoutCx;
 use rustc_middle::ty::subst::{GenericArg, SubstsRef};
 use rustc_middle::ty::{
     Const, FloatTy, IntTy, ParamConst, ScalarInt, Ty, TyKind, UintTy, ValTree, VariantDef,
 };
-use rustc_target::abi::{Primitive, TagEncoding, VariantIdx, Variants};
+use rustc_target::abi::{FieldIdx, Primitive, TagEncoding, VariantIdx, Variants};
 
 use crate::abstract_value;
 use crate::abstract_value::{AbstractValue, AbstractValueTrait, BOTTOM};
@@ -189,11 +190,17 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         let target_root =
             Path::new_deref(Path::get_as_path(target_val), ExpressionType::NonPrimitive)
                 .canonicalize(&self.bv.current_environment);
+        let mut target_type = self.get_operand_rustc_type(&copy_info.dst);
         let count = self.visit_operand(&copy_info.count);
-        let target_path = Path::new_slice(target_root, count);
-        let collection_type = self.get_operand_rustc_type(&copy_info.dst);
+        let target_path =
+            if count.is_one() && self.bv.type_visitor().is_thin_pointer(target_type.kind()) {
+                target_type = self.bv.type_visitor().get_dereferenced_type(target_type);
+                target_root
+            } else {
+                Path::new_slice(target_root, count)
+            };
         self.bv
-            .copy_or_move_elements(target_path, source_path, collection_type, false);
+            .copy_or_move_elements(target_path, source_path, target_type, false);
     }
 
     /// Write the discriminant for a variant to the enum Place.
@@ -285,7 +292,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 self.visit_switch_int(discr, discr.ty(self.bv.mir, self.bv.tcx), targets)
             }
             mir::TerminatorKind::Resume => self.visit_resume(),
-            mir::TerminatorKind::Abort => self.visit_abort(),
+            mir::TerminatorKind::Terminate => self.visit_terminate(),
             mir::TerminatorKind::Return => self.visit_return(),
             mir::TerminatorKind::Unreachable => self.visit_unreachable(),
             mir::TerminatorKind::Drop {
@@ -298,7 +305,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 args,
                 destination,
                 target,
-                cleanup,
+                unwind,
                 from_hir_call,
                 fn_span,
             } => self.visit_call(
@@ -306,7 +313,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 args,
                 *destination,
                 *target,
-                *cleanup,
+                *unwind,
                 *from_hir_call,
                 fn_span,
             ),
@@ -315,8 +322,8 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 expected,
                 msg,
                 target,
-                cleanup,
-            } => self.visit_assert(cond, *expected, msg, *target, *cleanup),
+                unwind,
+            } => self.visit_assert(cond, *expected, msg, *target, *unwind),
             mir::TerminatorKind::Yield { .. } => assume_unreachable!(),
             mir::TerminatorKind::GeneratorDrop => assume_unreachable!(),
             mir::TerminatorKind::FalseEdge { .. } => assume_unreachable!(),
@@ -423,9 +430,9 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
     fn visit_resume(&self) {}
 
     /// Indicates that the landing pad is finished and that the process
-    /// should abort. Used to prevent unwinding for foreign items.
+    /// should terminate. Used to prevent unwinding for foreign items.
     #[logfn_inputs(TRACE)]
-    fn visit_abort(&self) {}
+    fn visit_terminate(&self) {}
 
     /// Indicates a normal return. The return place should have
     /// been filled in by now. This should occur at most once.
@@ -469,7 +476,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         &mut self,
         place: &mir::Place<'tcx>,
         target: mir::BasicBlock,
-        unwind: Option<mir::BasicBlock>,
+        unwind: mir::UnwindAction,
     ) {
         let place_path = self.get_path_for_place(place);
         let path = place_path.canonicalize(&self.bv.current_environment);
@@ -531,7 +538,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 );
                 call_visitor.actual_args = actual_args;
                 call_visitor.actual_argument_types = actual_argument_types;
-                call_visitor.cleanup = unwind;
+                call_visitor.unwind = unwind;
                 // We need a destination, but the drop statement does not provide one, so we use the
                 // local being dropped as the destination.
                 call_visitor.destination = *place;
@@ -554,7 +561,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             .current_environment
             .exit_conditions
             .insert_mut(target, self.bv.current_environment.entry_condition.clone());
-        if let Some(unwind_target) = unwind {
+        if let mir::UnwindAction::Cleanup(unwind_target) = unwind {
             self.bv.current_environment.exit_conditions.insert_mut(
                 unwind_target,
                 self.bv.current_environment.entry_condition.clone(),
@@ -571,7 +578,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
     /// This allows the memory occupied by "by-value" arguments to be
     /// reused across function calls without duplicating the contents.
     /// * `destination` - Destination for the return value. If some, the call returns a value.
-    /// * `cleanup` - Cleanups to be done if the call unwinds.
+    /// * `unwind` - Work to be done if the call unwinds.
     /// * `from_hir_call` - Whether this is from a call in HIR, rather than from an overloaded
     /// operator. True for overloaded function call.
     #[allow(clippy::too_many_arguments)]
@@ -582,7 +589,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         args: &[mir::Operand<'tcx>],
         destination: mir::Place<'tcx>,
         target: Option<mir::BasicBlock>,
-        cleanup: Option<mir::BasicBlock>,
+        unwind: mir::UnwindAction,
         from_hir_call: bool,
         fn_span: &rustc_span::Span,
     ) {
@@ -716,7 +723,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         );
         call_visitor.actual_args = actual_args;
         call_visitor.actual_argument_types = actual_argument_types;
-        call_visitor.cleanup = cleanup;
+        call_visitor.unwind = unwind;
         call_visitor.destination = destination;
         call_visitor.target = target;
         call_visitor.callee_fun_val = func_to_call;
@@ -1471,12 +1478,12 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         expected: bool,
         msg: &mir::AssertMessage<'tcx>,
         target: mir::BasicBlock,
-        cleanup: Option<mir::BasicBlock>,
+        unwind: mir::UnwindAction,
     ) {
         // Propagate the entry condition to the successor blocks, conjoined with cond (or !cond).
         let cond_val = self.visit_operand(cond);
         let not_cond_val = cond_val.logical_not();
-        if let Some(cleanup_target) = cleanup {
+        if let mir::UnwindAction::Cleanup(unwind_target) = unwind {
             let panic_exit_condition =
                 self.bv
                     .current_environment
@@ -1490,7 +1497,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 self.bv
                     .current_environment
                     .exit_conditions
-                    .insert_mut(cleanup_target, panic_exit_condition);
+                    .insert_mut(unwind_target, panic_exit_condition);
             }
         };
         let normal_exit_condition = self
@@ -1599,6 +1606,9 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         fn get_assert_msg_description<'tcx>(msg: &mir::AssertMessage<'tcx>) -> &'tcx str {
             match msg {
                 mir::AssertKind::BoundsCheck { .. } => "index out of bounds",
+                mir::AssertKind::MisalignedPointerDereference { .. } => {
+                    "misaligned pointer dereference"
+                }
                 _ => msg.description(),
             }
         }
@@ -1696,7 +1706,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     *ty,
                     &self.type_visitor().generic_argument_map,
                 );
-                self.visit_nullary_op(path, *null_op, specialized_ty);
+                self.visit_nullary_op(path, null_op, specialized_ty);
             }
             mir::Rvalue::UnaryOp(unary_op, operand) => {
                 self.visit_unary_op(path, *unary_op, operand);
@@ -2137,6 +2147,17 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 self.bv
                     .copy_or_move_elements(path, source_path, ty, is_move);
             }
+            mir::CastKind::Transmute => {
+                let source_type = self.get_operand_rustc_type(operand);
+                let source_value = self.visit_operand(operand);
+                let source_path = Path::get_as_path(source_value);
+                self.bv.copy_and_transmute(
+                    source_path,
+                    source_type,
+                    path,
+                    ty,
+                );
+            }
             // Remaining unclassified casts.
             mir::CastKind::IntToInt
             | mir::CastKind::FloatToFloat
@@ -2225,7 +2246,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
     ) {
         let left = self.visit_operand(left_operand);
         let right = self.visit_operand(right_operand);
-        let result = match bin_op {
+        let mut result = match bin_op {
             mir::BinOp::Add => left.addition(right),
             mir::BinOp::BitAnd => left.bit_and(right),
             mir::BinOp::BitOr => left.bit_or(right),
@@ -2244,7 +2265,72 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             mir::BinOp::Shr => left.shr(right),
             mir::BinOp::Sub => left.subtract(right),
         };
+        if let Expression::BitAnd { left, right } = &result.expression {
+            if right.expression.is_memory_reference() {
+                let alignment = match &left.expression {
+                    Expression::CompileTimeConstant(ConstantDomain::U128(1)) => 2u128,
+                    Expression::CompileTimeConstant(ConstantDomain::U128(3)) => 4u128,
+                    Expression::CompileTimeConstant(ConstantDomain::U128(7)) => 8u128,
+                    Expression::CompileTimeConstant(ConstantDomain::U128(15)) => 16u128,
+                    _ => u128::MAX,
+                };
+                if alignment <= 16u128 && self.is_aligned(right, alignment) {
+                    result = Rc::new(0u128.into());
+                }
+            }
+        }
         self.bv.update_value_at(path, result);
+    }
+
+    #[logfn_inputs(DEBUG)]
+    fn is_aligned(&mut self, value: &Rc<AbstractValue>, desired_alignment: u128) -> bool {
+        match &value.expression {
+            Expression::Cast { operand, .. } | Expression::Transmute { operand, .. } => {
+                if let Expression::CompileTimeConstant(ConstantDomain::U128(u)) =
+                    &operand.expression
+                {
+                    return *u == desired_alignment;
+                }
+                self.is_aligned(operand, desired_alignment)
+            }
+            Expression::HeapBlock { .. } => {
+                let block_path = Path::new_heap_block(value.clone());
+                let layout_path = Path::new_layout(block_path);
+                if let Some(layout) = self.bv.current_environment.value_at(&layout_path) {
+                    if let Expression::HeapBlockLayout { alignment, .. } = &layout.expression {
+                        if let Expression::CompileTimeConstant(ConstantDomain::U128(alignment)) =
+                            &alignment.expression
+                        {
+                            return *alignment >= desired_alignment;
+                        }
+                        debug!("{:?}", alignment);
+                    }
+                }
+                false
+            }
+            Expression::InitialParameterValue { path, .. }
+            | Expression::Variable { path, .. }
+            | Expression::Reference(path) => {
+                if let PathEnum::HeapBlock { value } = &path.value {
+                    self.is_aligned(value, desired_alignment)
+                } else {
+                    let ty = self
+                        .bv
+                        .type_visitor()
+                        .get_path_rustc_type(path, self.bv.current_span);
+                    debug!("{:?}", ty);
+                    let (_, type_alignment) =
+                        self.bv.type_visitor().get_type_size_and_alignment(ty);
+                    type_alignment >= desired_alignment
+                }
+            }
+            Expression::Join { left, right } => {
+                self.is_aligned(left, desired_alignment)
+                    && self.is_aligned(right, desired_alignment)
+            }
+            Expression::WidenedJoin { operand, .. } => self.is_aligned(operand, desired_alignment),
+            _ => false,
+        }
     }
 
     /// Apply the given binary operator to the two operands, with overflow checking where appropriate
@@ -2309,7 +2395,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
     fn visit_nullary_op(
         &mut self,
         path: Rc<Path>,
-        null_op: mir::NullOp,
+        null_op: &mir::NullOp,
         ty: rustc_middle::ty::Ty<'tcx>,
     ) {
         let (len, alignment) = if let Ok(ty_and_layout) = self.type_visitor().layout_of(ty) {
@@ -2335,6 +2421,25 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         let value = match null_op {
             mir::NullOp::AlignOf => alignment,
             mir::NullOp::SizeOf => len,
+            mir::NullOp::OffsetOf(fields) => {
+                if let Ok(ty_and_layout) = self.type_visitor().layout_of(ty) {
+                    let lcx = LayoutCx {
+                        tcx: self.bv.tcx,
+                        param_env: self.type_visitor().get_param_env(),
+                    };
+                    let offset_in_bytes = ty_and_layout
+                        .offset_of_subfield(&lcx, fields.iter().map(|f| f.index()))
+                        .bytes();
+                    Rc::new((offset_in_bytes as u128).into())
+                } else {
+                    //todo: need expression that eventually refines into the actual offset
+                    let type_index = self.type_visitor().get_index_for(self.bv.tcx.types.u128);
+                    AbstractValue::make_typed_unknown(
+                        ExpressionType::U128,
+                        Path::new_local(996, type_index),
+                    )
+                }
+            }
         };
         self.bv.update_value_at(path, value);
     }
@@ -2378,7 +2483,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         &mut self,
         path: Rc<Path>,
         aggregate_kind: &mir::AggregateKind<'tcx>,
-        operands: &[mir::Operand<'tcx>],
+        operands: &IndexVec<FieldIdx, mir::Operand<'tcx>>,
     ) {
         match aggregate_kind {
             mir::AggregateKind::Array(ty) => {
@@ -2437,13 +2542,13 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     );
                 } else if adt_def.is_union() {
                     let num_cases = variant_def.fields.len();
-                    let case_index = case_index.unwrap_or(0);
-                    let field_path = Path::new_union_field(path, case_index, num_cases);
+                    let case_index = case_index.unwrap_or(0usize.into());
+                    let field_path = Path::new_union_field(path, case_index.into(), num_cases);
                     let field = &variant_def.fields[case_index];
                     let field_ty = field.ty(self.bv.tcx, substs);
                     self.type_visitor_mut()
                         .set_path_rustc_type(field_path.clone(), field_ty);
-                    self.visit_use(field_path, &operands[0]);
+                    self.visit_use(field_path, &operands[0usize.into()]);
                     return;
                 }
                 if variant_def.fields.is_empty() {
@@ -2455,7 +2560,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     let field_ty = field.ty(self.bv.tcx, substs);
                     self.type_visitor_mut()
                         .set_path_rustc_type(field_path.clone(), field_ty);
-                    if let Some(operand) = operands.get(i) {
+                    if let Some(operand) = operands.get(i.into()) {
                         self.visit_use(field_path, operand);
                     } else {
                         debug!(
@@ -2585,8 +2690,8 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         unevaluated: &rustc_middle::mir::UnevaluatedConst<'tcx>,
         lty: Ty<'tcx>,
     ) -> Rc<AbstractValue> {
-        let def_ty = unevaluated.def;
-        let mut def_id = def_ty.def_id_for_type_of();
+        let mut def_id = unevaluated.def;
+        let def_ty = self.bv.cv.tcx.type_of(def_id);
         let substs = self.type_visitor().specialize_substs(
             unevaluated.substs,
             &self.type_visitor().generic_argument_map,
@@ -2657,105 +2762,8 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
     pub fn visit_const(&mut self, literal: &Const<'tcx>) -> Rc<AbstractValue> {
         let mut val = literal.kind();
         let lty = literal.ty();
-        if let rustc_middle::ty::ConstKind::Unevaluated(unevaluated) = &val {
-            let def_ty = unevaluated.def;
-            if def_ty.const_param_did.is_some() {
-                val = val.eval(self.bv.tcx, self.type_visitor().get_param_env());
-            } else {
-                let mut def_id = def_ty.def_id_for_type_of();
-                let substs = self.type_visitor().specialize_substs(
-                    unevaluated.substs,
-                    &self.type_visitor().generic_argument_map,
-                );
-                self.bv.cv.substs_cache.insert(def_id, substs);
-                let path = {
-                    if !substs.is_empty() {
-                        let param_env = rustc_middle::ty::ParamEnv::reveal_all();
-                        trace!("devirtualize resolving def_id {:?}: {:?}", def_id, def_ty);
-                        trace!("substs {:?}", substs);
-                        if let Ok(Some(instance)) = rustc_middle::ty::Instance::resolve(
-                            self.bv.tcx,
-                            param_env,
-                            def_id,
-                            substs,
-                        ) {
-                            def_id = instance.def.def_id();
-                            trace!("resolved it to {:?}", def_id);
-                        }
-                    }
-                    if self.bv.tcx.is_mir_available(def_id) {
-                        self.bv.import_static(Path::new_static(self.bv.tcx, def_id))
-                    } else if self.bv.cv.known_names_cache.get(self.bv.tcx, def_id)
-                        == KnownNames::AllocRawVecMinNonZeroCap
-                    {
-                        if let Ok(ty_and_layout) = self.type_visitor().layout_of(substs.type_at(0))
-                        {
-                            if !ty_and_layout.is_unsized() {
-                                let size_of_t = ty_and_layout.layout.size().bytes();
-                                let min_non_zero_cap: u128 = if size_of_t == 1 {
-                                    8
-                                } else if size_of_t <= 1024 {
-                                    4
-                                } else {
-                                    1
-                                };
-                                return Rc::new((min_non_zero_cap).into());
-                            }
-                        }
-                        Path::new_static(self.bv.tcx, def_id)
-                    } else {
-                        let cache_key = utils::summary_key_str(self.bv.tcx, def_id);
-                        let summary = self
-                            .bv
-                            .cv
-                            .summary_cache
-                            .get_persistent_summary_for(&cache_key);
-                        if summary.is_computed {
-                            let path = self.bv.import_static(Path::new_static(self.bv.tcx, def_id));
-                            self.type_visitor_mut()
-                                .set_path_rustc_type(path.clone(), lty);
-                            return self.bv.lookup_path_and_refine_result(path, lty);
-                        } else {
-                            Path::new_static(self.bv.tcx, def_id)
-                        }
-                    }
-                };
-
-                self.type_visitor_mut()
-                    .set_path_rustc_type(path.clone(), lty);
-                let val_at_path = self.bv.lookup_path_and_refine_result(path, lty);
-                if let Expression::Variable { .. } = &val_at_path.expression {
-                    // Seems like there is nothing at the path, but...
-                    if self.bv.tcx.is_mir_available(def_id) {
-                        // The MIR body should have computed something. If that something is
-                        // a structure, the value of the path will be unknown (only leaf paths have
-                        // known values).
-                        return val_at_path;
-                    }
-                    // Seems like a lazily serialized constant. Force evaluation.
-                    val = val.eval(
-                        self.bv.tcx,
-                        self.type_visitor()
-                            .get_param_env()
-                            .with_reveal_all_normalized(self.bv.cv.tcx),
-                    );
-                    if let rustc_middle::ty::ConstKind::Unevaluated(..) = &val {
-                        // val.eval did not manage to evaluate this, go with unknown.
-                        debug!(
-                            "static def_id with no MIR {:?} {:?}",
-                            def_id,
-                            utils::summary_key_str(self.bv.tcx, def_id)
-                        );
-                        debug!(
-                            "type key {:?}",
-                            utils::argument_types_key_str(self.bv.tcx, Some(substs))
-                        );
-                        return val_at_path;
-                    }
-                } else {
-                    return val_at_path;
-                }
-            }
+        if let rustc_middle::ty::ConstKind::Unevaluated(_unevaluated) = &val {
+            val = val.eval(self.bv.tcx, self.type_visitor().get_param_env());
         }
 
         match &val {
@@ -2767,8 +2775,9 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     }
                 }
                 assume_unreachable!(
-                    "reference to unmatched generic constant argument {:?} {:?}",
+                    "reference to unmatched generic constant argument {:?} {:?} {:?}",
                     val,
+                    self.type_visitor().generic_arguments,
                     self.bv.current_span
                 );
             }
@@ -3998,7 +4007,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     if def.is_union() {
                         let variants = &def.variants();
                         assume!(variants.len() == 1); // only enums have more than one variant
-                        let variant = &variants[variants.last().unwrap()];
+                        let variant = &variants[0usize.into()];
                         return PathSelector::UnionField {
                             case_index: field.index(),
                             num_cases: variant.fields.len(),
