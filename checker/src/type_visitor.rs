@@ -13,7 +13,7 @@ use log_derive::*;
 
 use mirai_annotations::*;
 use rustc_hir::def_id::DefId;
-use rustc_index::vec::Idx;
+use rustc_index::Idx;
 use rustc_middle::mir;
 use rustc_middle::ty::subst::{GenericArg, GenericArgKind, InternalSubsts, SubstsRef};
 use rustc_middle::ty::{

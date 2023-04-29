@@ -12,7 +12,7 @@ use std::rc::Rc;
 use log_derive::*;
 use mirai_annotations::*;
 use rustc_hir::def_id::DefId;
-use rustc_index::vec::{Idx, IndexVec};
+use rustc_index::{Idx, IndexVec};
 use rustc_middle::mir;
 use rustc_middle::mir::interpret::{alloc_range, ConstValue, GlobalAlloc, Scalar};
 use rustc_middle::ty::adjustment::PointerCast;
@@ -2259,7 +2259,11 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             mir::BinOp::Lt => left.less_than(right),
             mir::BinOp::Mul => left.multiply(right),
             mir::BinOp::Ne => left.not_equals(right),
-            mir::BinOp::Offset => left.offset(right),
+            mir::BinOp::Offset => {
+                let r = left.offset(right);
+                self.bv.check_offset(&r);
+                r
+            }
             mir::BinOp::Rem => left.remainder(right),
             mir::BinOp::Shl => left.shift_left(right),
             mir::BinOp::Shr => left.shr(right),
