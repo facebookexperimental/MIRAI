@@ -24,6 +24,8 @@ macro_rules! atomic_int {
             use std::ops::BitOrAssign;
             use std::ops::BitXorAssign;
             use std::ops::SubAssign;
+            let bw = std::intrinsics::size_of::<$t>();
+            precondition!((dst as usize) & (bw - 1) == 0);
             let result = *dst;
             Wrapping(*dst).$op(Wrapping(src));
             result
@@ -34,6 +36,8 @@ macro_rules! atomic_int {
 macro_rules! atomic_nand {
     ($n:ident, $t:ty) => {
         pub unsafe fn $n(dst: *mut $t, src: $t) -> $t {
+            let bw = std::intrinsics::size_of::<$t>();
+            precondition!((dst as usize) & (bw - 1) == 0);
             let result = *dst;
             *dst = !(*dst ^ src);
             result
@@ -44,6 +48,8 @@ macro_rules! atomic_nand {
 macro_rules! atomic_max_min {
     ($n:ident, $t:ty, $op:tt) => {
         pub unsafe fn $n(dst: *mut $t, src: $t) -> $t {
+            let bw = std::intrinsics::size_of::<$t>();
+            precondition!((dst as usize) & (bw-1) == 0);
             if *dst $op src {
                 src
             } else {
@@ -56,6 +62,8 @@ macro_rules! atomic_max_min {
 macro_rules! atomic_cxchg {
     ($n:ident, $t:ty) => {
         pub unsafe fn $n(dst: *mut $t, old: $t, src: $t) -> ($t, bool) {
+            let bw = std::intrinsics::size_of::<$t>();
+            precondition!((dst as usize) & (bw - 1) == 0);
             if abstract_value!(true) {
                 *dst = src;
                 (old, true)

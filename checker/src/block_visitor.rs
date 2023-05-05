@@ -2286,7 +2286,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         self.bv.update_value_at(path, result);
     }
 
-    #[logfn_inputs(DEBUG)]
+    #[logfn_inputs(TRACE)]
     fn is_aligned(&mut self, value: &Rc<AbstractValue>, desired_alignment: u128) -> bool {
         match &value.expression {
             Expression::Cast { operand, .. } | Expression::Transmute { operand, .. } => {
@@ -2296,6 +2296,14 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     return *u == desired_alignment;
                 }
                 self.is_aligned(operand, desired_alignment)
+            }
+            Expression::ConditionalExpression {
+                consequent,
+                alternate,
+                ..
+            } => {
+                self.is_aligned(consequent, desired_alignment)
+                    && self.is_aligned(alternate, desired_alignment)
             }
             Expression::HeapBlock { .. } => {
                 let block_path = Path::new_heap_block(value.clone());
