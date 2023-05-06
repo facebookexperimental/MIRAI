@@ -10,10 +10,10 @@ jobs:
   clippy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3.5.2
 
       - name: Install toolchain
-        uses: actions-rs/toolchain@v1
+        uses: actions-rs/toolchain@v1.0.6
         with:
           toolchain: nightly-2022-08-08
           profile: minimal
@@ -39,17 +39,17 @@ jobs:
     runs-on: macos-latest
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3.5.2
 
       - name: Install toolchain
-        uses: actions-rs/toolchain@v1
+        uses: actions-rs/toolchain@v1.0.6
         with:
           toolchain: nightly-2022-08-08
           profile: minimal
           components: rustc-dev, llvm-tools-preview
 
       - name: Cache Cargo
-        uses: actions/cache@v3.0.5
+        uses: actions/cache@v3.3.1
         with:
           path: |
             ~/.cargo/bin/
@@ -60,7 +60,7 @@ jobs:
           key: ${{ runner.os }}-tests-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Execute tests
-        uses: actions-rs/cargo@v1
+        uses: actions-rs/cargo@v1.0.1
         with:
           command: test
           args: --all -- --test-threads=1
@@ -86,17 +86,17 @@ jobs:
     runs-on: macos-latest
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3.5.2
 
       - name: Install toolchain
-        uses: actions-rs/toolchain@v1
+        uses: actions-rs/toolchain@v1.0.6
         with:
           toolchain: nightly-2022-08-08
           profile: minimal
           components: rustc-dev, llvm-tools-preview
 
       - name: Cache Cargo
-        uses: actions/cache@v3.0.5
+        uses: actions/cache@v3.3.1
         with:
           path: |
             ~/.cargo/bin/
@@ -107,7 +107,7 @@ jobs:
           key: ${{ runner.os }}-mirai-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Install MIRAI
-        uses: actions-rs/cargo@v1
+        uses: actions-rs/cargo@v1.0.1
         with:
           command: install
           args: --force --path ./checker
@@ -120,17 +120,17 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3.5.2
 
       - name: Install toolchain
-        uses: actions-rs/toolchain@v1
+        uses: actions-rs/toolchain@v1.0.6
         with:
           toolchain: nightly-2022-08-08
           profile: minimal
           components: rustc-dev, llvm-tools-preview
 
       - name: Cache Cargo
-        uses: actions/cache@v3.0.5
+        uses: actions/cache@v3.3.1
         with:
           path: |
             ~/.cargo/bin/
@@ -141,7 +141,7 @@ jobs:
           key: ${{ runner.os }}-mirai-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Install MIRAI
-        uses: actions-rs/cargo@v1
+        uses: actions-rs/cargo@v1.0.1
         with:
           command: install
           args: --force --path ./checker --no-default-features
@@ -154,17 +154,17 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3.5.2
 
       - name: Install toolchain
-        uses: actions-rs/toolchain@v1
+        uses: actions-rs/toolchain@v1.0.6
         with:
           toolchain: nightly-2022-08-08
           profile: minimal
           components: rustc-dev, llvm-tools-preview
 
       - name: Cache Cargo
-        uses: actions/cache@v3.0.5
+        uses: actions/cache@v3.3.1
         with:
           path: |
             ~/.cargo/bin/
@@ -175,7 +175,7 @@ jobs:
           key: ${{ runner.os }}-mirai-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Install MIRAI
-        uses: actions-rs/cargo@v1
+        uses: actions-rs/cargo@v1.0.1
         with:
           command: install
           args: --force --path ./checker --no-default-features
