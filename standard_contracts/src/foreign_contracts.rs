@@ -87,7 +87,23 @@ pub mod alloc {
                 1
             }
             fn MAXIMUM_ZST_CAPACITY() -> usize {
-                1 << (usize::BITS - 1)
+                let bits = if cfg!(any(
+                    target_arch = "x86",
+                    target_arch = "mips",
+                    target_arch = "powerpc",
+                    target_arch = "arm"
+                )) {
+                    31
+                } else if cfg!(any(
+                    target_arch = "x86_64",
+                    target_arch = "powerpc64",
+                    target_arch = "aarch64"
+                )) {
+                    63
+                } else {
+                    panic!("Unsupported architecture");
+                };
+                1 << bits
             }
         }
     }
@@ -1585,106 +1601,294 @@ pub mod core {
             atomic_cxchg!(atomic_cxchgweak_acqrel_relaxed__i128, i128);
             atomic_cxchg!(atomic_cxchgweak_acqrel_relaxed__u128, u128);
 
-            pub unsafe fn atomic_load_seqcst<T>(src: *const T) -> T
-            where
-                T: Copy,
-            {
-                *src
-            }
+            // pub unsafe fn atomic_load_seqcst<T>(src: *const T) -> T
+            // where
+            //     T: Copy,
+            // {
+            //     let bw = std::intrinsics::size_of::<T>();
+            //     precondition!((src as usize) & (bw - 1) == 0);
+            //     *src
+            // }
+            atomic_load!(atomic_load_seqcst__i8, i8);
+            atomic_load!(atomic_load_seqcst__i16, i16);
+            atomic_load!(atomic_load_seqcst__i32, i32);
+            atomic_load!(atomic_load_seqcst__i64, i64);
+            atomic_load!(atomic_load_seqcst__isize, isize);
+            atomic_load!(atomic_load_seqcst__u8, u8);
+            atomic_load!(atomic_load_seqcst__u16, u16);
+            atomic_load!(atomic_load_seqcst__u32, u32);
+            atomic_load!(atomic_load_seqcst__u64, u64);
+            atomic_load!(atomic_load_seqcst__usize, usize);
+            atomic_load!(atomic_load_seqcst__i128, i128);
+            atomic_load!(atomic_load_seqcst__u128, u128);
 
-            pub unsafe fn atomic_load_acquire<T>(src: *const T) -> T
-            where
-                T: Copy,
-            {
-                *src
-            }
+            // pub unsafe fn atomic_load_acquire<T>(src: *const T) -> T
+            // where
+            //     T: Copy,
+            // {
+            //     let bw = std::intrinsics::size_of::<T>();
+            //     precondition!((src as usize) & (bw - 1) == 0);
+            //     *src
+            // }
+            atomic_load!(atomic_load_acquire__i8, i8);
+            atomic_load!(atomic_load_acquire__i16, i16);
+            atomic_load!(atomic_load_acquire__i32, i32);
+            atomic_load!(atomic_load_acquire__i64, i64);
+            atomic_load!(atomic_load_acquire__isize, isize);
+            atomic_load!(atomic_load_acquire__u8, u8);
+            atomic_load!(atomic_load_acquire__u16, u16);
+            atomic_load!(atomic_load_acquire__u32, u32);
+            atomic_load!(atomic_load_acquire__u64, u64);
+            atomic_load!(atomic_load_acquire__usize, usize);
+            atomic_load!(atomic_load_acquire__i128, i128);
+            atomic_load!(atomic_load_acquire__u128, u128);
 
-            pub unsafe fn atomic_load_relaxed<T>(src: *const T) -> T
-            where
-                T: Copy,
-            {
-                *src
-            }
+            // pub unsafe fn atomic_load_relaxed<T>(src: *const T) -> T
+            // where
+            //     T: Copy,
+            // {
+            //     let bw = std::intrinsics::size_of::<T>();
+            //     precondition!((src as usize) & (bw - 1) == 0);
+            //     *src
+            // }
+            atomic_load!(atomic_load_relaxed__i8, i8);
+            atomic_load!(atomic_load_relaxed__i16, i16);
+            atomic_load!(atomic_load_relaxed__i32, i32);
+            atomic_load!(atomic_load_relaxed__i64, i64);
+            atomic_load!(atomic_load_relaxed__isize, isize);
+            atomic_load!(atomic_load_relaxed__u8, u8);
+            atomic_load!(atomic_load_relaxed__u16, u16);
+            atomic_load!(atomic_load_relaxed__u32, u32);
+            atomic_load!(atomic_load_relaxed__u64, u64);
+            atomic_load!(atomic_load_relaxed__usize, usize);
+            atomic_load!(atomic_load_relaxed__i128, i128);
+            atomic_load!(atomic_load_relaxed__u128, u128);
 
-            pub unsafe fn atomic_load_unordered<T>(src: *const T) -> T
-            where
-                T: Copy,
-            {
-                *src
-            }
+            // pub unsafe fn atomic_load_unordered<T>(src: *const T) -> T
+            // where
+            //     T: Copy,
+            // {
+            //     let bw = std::intrinsics::size_of::<T>();
+            //     precondition!((src as usize) & (bw - 1) == 0);
+            //     *src
+            // }
+            atomic_load!(atomic_load_unordered__i8, i8);
+            atomic_load!(atomic_load_unordered__i16, i16);
+            atomic_load!(atomic_load_unordered__i32, i32);
+            atomic_load!(atomic_load_unordered__i64, i64);
+            atomic_load!(atomic_load_unordered__isize, isize);
+            atomic_load!(atomic_load_unordered__u8, u8);
+            atomic_load!(atomic_load_unordered__u16, u16);
+            atomic_load!(atomic_load_unordered__u32, u32);
+            atomic_load!(atomic_load_unordered__u64, u64);
+            atomic_load!(atomic_load_unordered__usize, usize);
+            atomic_load!(atomic_load_unordered__i128, i128);
+            atomic_load!(atomic_load_unordered__u128, u128);
 
-            pub unsafe fn atomic_store_seqcst<T>(dst: *mut T, val: T)
-            where
-                T: Copy,
-            {
-                *dst = val;
-            }
+            // pub unsafe fn atomic_store_seqcst<T>(dst: *mut T, val: T)
+            // where
+            //     T: Copy,
+            // {
+            //     let bw = std::intrinsics::size_of::<T>();
+            //     precondition!((dst as usize) & (bw - 1) == 0);
+            //     *dst = val;
+            // }
+            atomic_store!(atomic_store_seqcst__i8, i8);
+            atomic_store!(atomic_store_seqcst__i16, i16);
+            atomic_store!(atomic_store_seqcst__i32, i32);
+            atomic_store!(atomic_store_seqcst__i64, i64);
+            atomic_store!(atomic_store_seqcst__isize, isize);
+            atomic_store!(atomic_store_seqcst__u8, u8);
+            atomic_store!(atomic_store_seqcst__u16, u16);
+            atomic_store!(atomic_store_seqcst__u32, u32);
+            atomic_store!(atomic_store_seqcst__u64, u64);
+            atomic_store!(atomic_store_seqcst__usize, usize);
+            atomic_store!(atomic_store_seqcst__i128, i128);
+            atomic_store!(atomic_store_seqcst__u128, u128);
 
-            pub unsafe fn atomic_store_release<T>(dst: *mut T, val: T)
-            where
-                T: Copy,
-            {
-                *dst = val;
-            }
+            // pub unsafe fn atomic_store_release<T>(dst: *mut T, val: T)
+            // where
+            //     T: Copy,
+            // {
+            //     let bw = std::intrinsics::size_of::<T>();
+            //     precondition!((dst as usize) & (bw - 1) == 0);
+            //     *dst = val;
+            // }
+            atomic_store!(atomic_store_release__i8, i8);
+            atomic_store!(atomic_store_release__i16, i16);
+            atomic_store!(atomic_store_release__i32, i32);
+            atomic_store!(atomic_store_release__i64, i64);
+            atomic_store!(atomic_store_release__isize, isize);
+            atomic_store!(atomic_store_release__u8, u8);
+            atomic_store!(atomic_store_release__u16, u16);
+            atomic_store!(atomic_store_release__u32, u32);
+            atomic_store!(atomic_store_release__u64, u64);
+            atomic_store!(atomic_store_release__usize, usize);
+            atomic_store!(atomic_store_release__i128, i128);
+            atomic_store!(atomic_store_release__u128, u128);
 
-            pub unsafe fn atomic_store_relaxed<T>(dst: *mut T, val: T)
-            where
-                T: Copy,
-            {
-                *dst = val;
-            }
+            // pub unsafe fn atomic_store_relaxed<T>(dst: *mut T, val: T)
+            // where
+            //     T: Copy,
+            // {
+            //     let bw = std::intrinsics::size_of::<T>();
+            //     precondition!((dst as usize) & (bw - 1) == 0);
+            //     *dst = val;
+            // }
+            atomic_store!(atomic_store_relaxed__i8, i8);
+            atomic_store!(atomic_store_relaxed__i16, i16);
+            atomic_store!(atomic_store_relaxed__i32, i32);
+            atomic_store!(atomic_store_relaxed__i64, i64);
+            atomic_store!(atomic_store_relaxed__isize, isize);
+            atomic_store!(atomic_store_relaxed__u8, u8);
+            atomic_store!(atomic_store_relaxed__u16, u16);
+            atomic_store!(atomic_store_relaxed__u32, u32);
+            atomic_store!(atomic_store_relaxed__u64, u64);
+            atomic_store!(atomic_store_relaxed__usize, usize);
+            atomic_store!(atomic_store_relaxed__i128, i128);
+            atomic_store!(atomic_store_relaxed__u128, u128);
 
-            pub unsafe fn atomic_store_unordered<T>(dst: *mut T, val: T)
-            where
-                T: Copy,
-            {
-                *dst = val;
-            }
+            // pub unsafe fn atomic_store_unordered<T>(dst: *mut T, val: T)
+            // where
+            //     T: Copy,
+            // {
+            //     let bw = std::intrinsics::size_of::<T>();
+            //     precondition!((dst as usize) & (bw - 1) == 0);
+            //     *dst = val;
+            // }
+            atomic_store!(atomic_store_unordered__i8, i8);
+            atomic_store!(atomic_store_unordered__i16, i16);
+            atomic_store!(atomic_store_unordered__i32, i32);
+            atomic_store!(atomic_store_unordered__i64, i64);
+            atomic_store!(atomic_store_unordered__isize, isize);
+            atomic_store!(atomic_store_unordered__u8, u8);
+            atomic_store!(atomic_store_unordered__u16, u16);
+            atomic_store!(atomic_store_unordered__u32, u32);
+            atomic_store!(atomic_store_unordered__u64, u64);
+            atomic_store!(atomic_store_unordered__usize, usize);
+            atomic_store!(atomic_store_unordered__i128, i128);
+            atomic_store!(atomic_store_unordered__u128, u128);
 
-            pub unsafe fn atomic_xchg_seqcst<T>(dst: *mut T, src: T) -> T
-            where
-                T: Copy,
-            {
-                let result = *dst;
-                *dst = src;
-                result
-            }
+            // pub unsafe fn atomic_xchg_seqcst<T>(dst: *mut T, src: T) -> T
+            // where
+            //     T: Copy,
+            // {
+            //     let bw = std::intrinsics::size_of::<T>();
+            //     precondition!((dst as usize) & (bw - 1) == 0);
+            //     precondition!((src as usize) & (bw - 1) == 0);
+            //     let result = *dst;
+            //     *dst = src;
+            //     result
+            // }
+            atomic_xchg!(atomic_xchg_seqcst__i8, i8);
+            atomic_xchg!(atomic_xchg_seqcst__i16, i16);
+            atomic_xchg!(atomic_xchg_seqcst__i32, i32);
+            atomic_xchg!(atomic_xchg_seqcst__i64, i64);
+            atomic_xchg!(atomic_xchg_seqcst__isize, isize);
+            atomic_xchg!(atomic_xchg_seqcst__u8, u8);
+            atomic_xchg!(atomic_xchg_seqcst__u16, u16);
+            atomic_xchg!(atomic_xchg_seqcst__u32, u32);
+            atomic_xchg!(atomic_xchg_seqcst__u64, u64);
+            atomic_xchg!(atomic_xchg_seqcst__usize, usize);
+            atomic_xchg!(atomic_xchg_seqcst__i128, i128);
+            atomic_xchg!(atomic_xchg_seqcst__u128, u128);
 
-            pub unsafe fn atomic_xchg_acquire<T>(dst: *mut T, src: T) -> T
-            where
-                T: Copy,
-            {
-                let result = *dst;
-                *dst = src;
-                result
-            }
+            // pub unsafe fn atomic_xchg_acquire<T>(dst: *mut T, src: T) -> T
+            // where
+            //     T: Copy,
+            // {
+            //     let bw = std::intrinsics::size_of::<T>();
+            //     precondition!((dst as usize) & (bw - 1) == 0);
+            //     precondition!((src as usize) & (bw - 1) == 0);
+            //     let result = *dst;
+            //     *dst = src;
+            //     result
+            // }
+            atomic_xchg!(atomic_xchg_acquire__i8, i8);
+            atomic_xchg!(atomic_xchg_acquire__i16, i16);
+            atomic_xchg!(atomic_xchg_acquire__i32, i32);
+            atomic_xchg!(atomic_xchg_acquire__i64, i64);
+            atomic_xchg!(atomic_xchg_acquire__isize, isize);
+            atomic_xchg!(atomic_xchg_acquire__u8, u8);
+            atomic_xchg!(atomic_xchg_acquire__u16, u16);
+            atomic_xchg!(atomic_xchg_acquire__u32, u32);
+            atomic_xchg!(atomic_xchg_acquire__u64, u64);
+            atomic_xchg!(atomic_xchg_acquire__usize, usize);
+            atomic_xchg!(atomic_xchg_acquire__i128, i128);
+            atomic_xchg!(atomic_xchg_acquire__u128, u128);
 
-            pub unsafe fn atomic_xchg_release<T>(dst: *mut T, src: T) -> T
-            where
-                T: Copy,
-            {
-                let result = *dst;
-                *dst = src;
-                result
-            }
+            // pub unsafe fn atomic_xchg_release<T>(dst: *mut T, src: T) -> T
+            // where
+            //     T: Copy,
+            // {
+            //     let bw = std::intrinsics::size_of::<T>();
+            //     precondition!((dst as usize) & (bw - 1) == 0);
+            //     precondition!((src as usize) & (bw - 1) == 0);
+            //     let result = *dst;
+            //     *dst = src;
+            //     result
+            // }
+            atomic_xchg!(atomic_xchg_release__i8, i8);
+            atomic_xchg!(atomic_xchg_release__i16, i16);
+            atomic_xchg!(atomic_xchg_release__i32, i32);
+            atomic_xchg!(atomic_xchg_release__i64, i64);
+            atomic_xchg!(atomic_xchg_release__isize, isize);
+            atomic_xchg!(atomic_xchg_release__u8, u8);
+            atomic_xchg!(atomic_xchg_release__u16, u16);
+            atomic_xchg!(atomic_xchg_release__u32, u32);
+            atomic_xchg!(atomic_xchg_release__u64, u64);
+            atomic_xchg!(atomic_xchg_release__usize, usize);
+            atomic_xchg!(atomic_xchg_release__i128, i128);
+            atomic_xchg!(atomic_xchg_release__u128, u128);
 
-            pub unsafe fn atomic_xchg_acqrel<T>(dst: *mut T, src: T) -> T
-            where
-                T: Copy,
-            {
-                let result = *dst;
-                *dst = src;
-                result
-            }
+            // pub unsafe fn atomic_xchg_acqrel<T>(dst: *mut T, src: T) -> T
+            // where
+            //     T: Copy,
+            // {
+            //     let bw = std::intrinsics::size_of::<T>();
+            //     precondition!((dst as usize) & (bw - 1) == 0);
+            //     precondition!((src as usize) & (bw - 1) == 0);
+            //     let result = *dst;
+            //     *dst = src;
+            //     result
+            // }
+            atomic_xchg!(atomic_xchg_acqrel__i8, i8);
+            atomic_xchg!(atomic_xchg_acqrel__i16, i16);
+            atomic_xchg!(atomic_xchg_acqrel__i32, i32);
+            atomic_xchg!(atomic_xchg_acqrel__i64, i64);
+            atomic_xchg!(atomic_xchg_acqrel__isize, isize);
+            atomic_xchg!(atomic_xchg_acqrel__u8, u8);
+            atomic_xchg!(atomic_xchg_acqrel__u16, u16);
+            atomic_xchg!(atomic_xchg_acqrel__u32, u32);
+            atomic_xchg!(atomic_xchg_acqrel__u64, u64);
+            atomic_xchg!(atomic_xchg_acqrel__usize, usize);
+            atomic_xchg!(atomic_xchg_acqrel__i128, i128);
+            atomic_xchg!(atomic_xchg_acqrel__u128, u128);
 
-            pub unsafe fn atomic_xchg_relaxed<T>(dst: *mut T, src: T) -> T
-            where
-                T: Copy,
-            {
-                let result = *dst;
-                *dst = src;
-                result
-            }
+            // pub unsafe fn atomic_xchg_relaxed<T>(dst: *mut T, src: T) -> T
+            // where
+            //     T: Copy,
+            // {
+            //     let bw = std::intrinsics::size_of::<T>();
+            //     precondition!((dst as usize) & (bw - 1) == 0);
+            //     precondition!((src as usize) & (bw - 1) == 0);
+            //     let result = *dst;
+            //     *dst = src;
+            //     result
+            // }
+            atomic_xchg!(atomic_xchg_relaxed__i8, i8);
+            atomic_xchg!(atomic_xchg_relaxed__i16, i16);
+            atomic_xchg!(atomic_xchg_relaxed__i32, i32);
+            atomic_xchg!(atomic_xchg_relaxed__i64, i64);
+            atomic_xchg!(atomic_xchg_relaxed__isize, isize);
+            atomic_xchg!(atomic_xchg_relaxed__u8, u8);
+            atomic_xchg!(atomic_xchg_relaxed__u16, u16);
+            atomic_xchg!(atomic_xchg_relaxed__u32, u32);
+            atomic_xchg!(atomic_xchg_relaxed__u64, u64);
+            atomic_xchg!(atomic_xchg_relaxed__usize, usize);
+            atomic_xchg!(atomic_xchg_relaxed__i128, i128);
+            atomic_xchg!(atomic_xchg_relaxed__u128, u128);
+
             // pub unsafe fn atomic_xadd_seqcst<T>(dst: *mut T, src: T) -> T
             // where
             //     T: Copy,
@@ -3073,9 +3277,26 @@ pub mod core {
         }
 
         pub mod implement_isize {
+            pub fn BITS() -> isize {
+                if cfg!(any(
+                    target_arch = "x86",
+                    target_arch = "mips",
+                    target_arch = "powerpc",
+                    target_arch = "arm"
+                )) {
+                    32
+                } else if cfg!(any(
+                    target_arch = "x86_64",
+                    target_arch = "powerpc64",
+                    target_arch = "aarch64"
+                )) {
+                    64
+                } else {
+                    panic!("Unsupported architecture");
+                }
+            }
             default_contract!(from_str);
             default_contract!(from_str_radix);
-
             pub fn MAX() -> isize {
                 if cfg!(any(
                     target_arch = "x86",
@@ -3241,6 +3462,24 @@ pub mod core {
         }
 
         pub mod implement_usize {
+            pub fn BITS() -> isize {
+                if cfg!(any(
+                    target_arch = "x86",
+                    target_arch = "mips",
+                    target_arch = "powerpc",
+                    target_arch = "arm"
+                )) {
+                    32
+                } else if cfg!(any(
+                    target_arch = "x86_64",
+                    target_arch = "powerpc64",
+                    target_arch = "aarch64"
+                )) {
+                    64
+                } else {
+                    panic!("Unsupported architecture");
+                }
+            }
             pub fn checked_add(_self: usize, value: usize) -> Option<usize> {
                 use ::std::num::Wrapping;
                 use std::ops::Add;
@@ -3251,10 +3490,8 @@ pub mod core {
                     Some(Wrapping(_self).add(Wrapping(value)).0)
                 }
             }
-
             default_contract!(from_str);
             default_contract!(from_str_radix);
-
             pub fn is_power_of_two(n: usize) -> bool {
                 if cfg!(any(
                     target_arch = "x86",
@@ -3273,7 +3510,6 @@ pub mod core {
                     panic!("Unsupported architecture");
                 }
             }
-
             pub fn MAX() -> usize {
                 if cfg!(any(
                     target_arch = "x86",

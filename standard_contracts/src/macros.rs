@@ -74,6 +74,39 @@ macro_rules! atomic_cxchg {
     };
 }
 
+macro_rules! atomic_load {
+    ($n:ident, $t:ty) => {
+        pub unsafe fn $n(src: *const $t) -> $t {
+            let bw = std::intrinsics::size_of::<$t>();
+            precondition!((src as usize) & (bw - 1) == 0);
+            *src
+        }
+    };
+}
+
+macro_rules! atomic_store {
+    ($n:ident, $t:ty) => {
+        pub unsafe fn $n(dst: *mut $t, val: $t) {
+            let bw = std::intrinsics::size_of::<$t>();
+            precondition!((dst as usize) & (bw - 1) == 0);
+            *dst = val;
+        }
+    };
+}
+
+macro_rules! atomic_xchg {
+    ($n:ident, $t:ty) => {
+        pub unsafe fn $n(dst: *mut $t, src: $t) -> $t {
+            let bw = std::intrinsics::size_of::<$t>();
+            precondition!((dst as usize) & (bw - 1) == 0);
+            precondition!((src as usize) & (bw - 1) == 0);
+            let result = *dst;
+            *dst = src;
+            result
+        }
+    };
+}
+
 // No preconditions needed and no post conditions provided.
 // No side-effects and can be safely used as an uninterpreted function.
 macro_rules! default_contract {
