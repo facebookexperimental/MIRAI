@@ -12,28 +12,9 @@ jobs:
     steps:
       - uses: actions/checkout@v3.5.2
 
-      - name: Install toolchain
-        uses: actions-rs/toolchain@v1.0.6
-        with:
-          toolchain: nightly-2022-08-08
-          profile: minimal
-          components: clippy, rustc-dev, llvm-tools-preview
-
-      - name: Cache Cargo
-        uses: actions/cache@v3.0.5
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-clippy-${{ hashFiles('**/Cargo.lock') }}
-
       - name: Run Clippy
-        uses: actions-rs/clippy@master
-        with:
-          args: --all-features --all-targets -- -D warnings
+        run: |
+          cargo clippy --no-default-features --all-targets -- -D warnings
 
   tests:
     runs-on: macos-latest
@@ -41,29 +22,9 @@ jobs:
     steps:
       - uses: actions/checkout@v3.5.2
 
-      - name: Install toolchain
-        uses: actions-rs/toolchain@v1.0.6
-        with:
-          toolchain: nightly-2022-08-08
-          profile: minimal
-          components: rustc-dev, llvm-tools-preview
-
-      - name: Cache Cargo
-        uses: actions/cache@v3.3.1
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-tests-${{ hashFiles('**/Cargo.lock') }}
-
       - name: Execute tests
-        uses: actions-rs/cargo@v1.0.1
-        with:
-          command: test
-          args: --all -- --test-threads=1
+        run: |
+          cargo test --all -- --test-threads=1
         env:
           CARGO_INCREMENTAL: 0
           RUSTFLAGS: "-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Zpanic_abort_tests"
@@ -88,33 +49,13 @@ jobs:
     steps:
       - uses: actions/checkout@v3.5.2
 
-      - name: Install toolchain
-        uses: actions-rs/toolchain@v1.0.6
-        with:
-          toolchain: nightly-2022-08-08
-          profile: minimal
-          components: rustc-dev, llvm-tools-preview
-
-      - name: Cache Cargo
-        uses: actions/cache@v3.3.1
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-mirai-${{ hashFiles('**/Cargo.lock') }}
-
       - name: Install MIRAI
-        uses: actions-rs/cargo@v1.0.1
-        with:
-          command: install
-          args: --force --path ./checker
+        run: |
+          cargo install --force --path ./checker --no-default-features
 
       - name: Run MIRAI on MIRAI
         run: |
-          cargo mirai
+          cargo mirai --no-default-features
 
   mirai_on_mirai_ubuntu:
     runs-on: ubuntu-latest
@@ -122,33 +63,13 @@ jobs:
     steps:
       - uses: actions/checkout@v3.5.2
 
-      - name: Install toolchain
-        uses: actions-rs/toolchain@v1.0.6
-        with:
-          toolchain: nightly-2022-08-08
-          profile: minimal
-          components: rustc-dev, llvm-tools-preview
-
-      - name: Cache Cargo
-        uses: actions/cache@v3.3.1
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-mirai-${{ hashFiles('**/Cargo.lock') }}
-
       - name: Install MIRAI
-        uses: actions-rs/cargo@v1.0.1
-        with:
-          command: install
-          args: --force --path ./checker --no-default-features
+        run: |
+          cargo install --force --path ./checker
 
       - name: Run MIRAI on MIRAI
         run: |
-          cargo mirai
+          cargo mirai --no-default-features
 
   mirai_on_mirai_windows:
     runs-on: windows-latest
@@ -156,29 +77,9 @@ jobs:
     steps:
       - uses: actions/checkout@v3.5.2
 
-      - name: Install toolchain
-        uses: actions-rs/toolchain@v1.0.6
-        with:
-          toolchain: nightly-2022-08-08
-          profile: minimal
-          components: rustc-dev, llvm-tools-preview
-
-      - name: Cache Cargo
-        uses: actions/cache@v3.3.1
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-mirai-${{ hashFiles('**/Cargo.lock') }}
-
       - name: Install MIRAI
-        uses: actions-rs/cargo@v1.0.1
-        with:
-          command: install
-          args: --force --path ./checker --no-default-features
+        run: |
+          cargo install --force --path ./checker --no-default-features
 
       - name: Run MIRAI on MIRAI
         run: |
