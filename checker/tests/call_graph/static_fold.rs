@@ -64,10 +64,10 @@ commit;
 /* EXPECTED:CALL_SITES{
   "files": [
     "tests/call_graph/static_fold.rs",
-    "/rustc/c4190f2d3a46a59f435f7b42f58bc22b2f4d6917/library/std/src/io/stdio.rs",
-    "/rustc/c4190f2d3a46a59f435f7b42f58bc22b2f4d6917/library/core/src/fmt/mod.rs",
-    "/rustc/c4190f2d3a46a59f435f7b42f58bc22b2f4d6917/library/core/src/slice/mod.rs",
-    "/rustc/c4190f2d3a46a59f435f7b42f58bc22b2f4d6917/library/core/src/ptr/metadata.rs"
+    "/rustc/2f2c438dce75d8cc532c3baa849eeddc0901802c/library/std/src/io/stdio.rs",
+    "/rustc/2f2c438dce75d8cc532c3baa849eeddc0901802c/library/core/src/fmt/mod.rs",
+    "/rustc/2f2c438dce75d8cc532c3baa849eeddc0901802c/library/core/src/slice/mod.rs",
+    "/rustc/2f2c438dce75d8cc532c3baa849eeddc0901802c/library/core/src/ptr/metadata.rs"
   ],
   "callables": [
     {

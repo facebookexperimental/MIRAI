@@ -27,10 +27,11 @@ jobs:
           cargo test --all -- --test-threads=1
         env:
           CARGO_INCREMENTAL: 0
-          RUSTFLAGS: "-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Zpanic_abort_tests"
+          RUSTFLAGS: "-Zprofile -Ccodegen-units=1 -Copt-level=0 -Clink-dead-code -Coverflow-checks=off -Zpanic_abort_tests"
 
       - name: Setup grcov
-        uses: actions-rs/grcov@v0.1
+        run: |
+          cargo install grcov
 
       - name: Run grcov
         run: |

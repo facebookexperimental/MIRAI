@@ -569,7 +569,7 @@ checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
 
 [[package]]
 name = "mirai"
-version = "1.1.7"
+version = "1.1.8"
 dependencies = [
  "bincode",
  "cargo_metadata",
