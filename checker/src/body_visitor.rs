@@ -2244,7 +2244,8 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
             let source_path = Path::new_computed(source_val);
             for i in from..to {
                 let target_index_val = self.get_u128_const_val(u128::try_from(i - from).unwrap());
-                let indexed_target = Path::new_index(target_path.clone(), target_index_val);
+                let indexed_target = Path::new_index(target_path.clone(), target_index_val)
+                    .canonicalize(&self.current_environment);
                 update(self, indexed_target, source_path.clone(), elem_ty);
             }
         } else {

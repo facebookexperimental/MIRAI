@@ -892,6 +892,21 @@ impl PathRefinement for Rc<Path> {
             return self.clone();
         }
 
+        if let PathEnum::Offset { value } = &self.value {
+            let Expression::Offset { left, right } = &value.expression else {unreachable!()};
+            if let Expression::Variable { path, var_type } = &left.expression {
+                let canonical_left_path = path.canonicalize(environment);
+                let canonical_lef_var =
+                    if let PathEnum::Computed { value } = &canonical_left_path.value {
+                        value.clone()
+                    } else {
+                        AbstractValue::make_typed_unknown(*var_type, canonical_left_path)
+                    };
+                let canonical_var = canonical_lef_var.offset(right.clone());
+                return Path::get_as_path(canonical_var);
+            }
+        }
+
         // If self is a qualified path, then recursive canonicalization of the qualifier may
         // cause substitutions (as above) and that could result in a non canonical qualified path
         // if *p becomes *&q. We thus need some additional logic to canonicalize the overall
@@ -953,6 +968,18 @@ impl PathRefinement for Rc<Path> {
                         let p = Path::get_as_path(value.clone());
                         return Path::new_qualified(p, selector.clone());
                     }
+                    Expression::Offset { left, right } => {
+                        if let Expression::Reference(p) = &left.expression {
+                            // *(offset(&p, i) becomes *(&p[i])
+                            if **selector == PathSelector::Deref {
+                                let p = Path::new_index(p.clone(), right.clone());
+                                let apv = AbstractValue::make_reference(p);
+                                let ap = Path::new_computed(apv);
+                                let dpr = Path::new_qualified(ap, selector.clone());
+                                return dpr;
+                            }
+                        }
+                    }
                     // *&p is equivalent to p and (&p).q is equivalent to p.q, etc.
                     Expression::Reference(p) => {
                         // *&p just becomes p
@@ -985,6 +1012,19 @@ impl PathRefinement for Rc<Path> {
                     if val.is_compile_time_constant() && val.ne(discr_val) {
                         // The downcast is impossible in this calling context
                         return Path::new_computed(Rc::new(abstract_value::BOTTOM));
+                    }
+                }
+            }
+            if let PathSelector::Index(index) = selector.as_ref() {
+                if let PathEnum::QualifiedPath {
+                    qualifier,
+                    selector: qualifier_selector,
+                    ..
+                } = &canonical_qualifier.value
+                {
+                    // &(p.[index]).deref.[i] -> p.[index+i]
+                    if let PathSelector::Index(i) = qualifier_selector.as_ref() {
+                        return Path::new_index(qualifier.clone(), i.addition(index.clone()));
                     }
                 }
             }

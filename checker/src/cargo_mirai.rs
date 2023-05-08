@@ -32,12 +32,12 @@ pub fn main() {
         return;
     }
 
-    match std::env::args().nth(1).as_ref().map(AsRef::as_ref) {
-        Some("mirai") => {
+    match std::env::args().nth(1).as_ref().map(AsRef::<str>::as_ref) {
+        Some(s) if s.ends_with("mirai") => {
             // Get here for the top level cargo execution, i.e. "cargo mirai".
             call_cargo();
         }
-        Some("rustc") => {
+        Some(s) if s.ends_with("rustc") => {
             // 'cargo rustc ..' redirects here because RUSTC_WRAPPER points to this binary.
             // execute rustc with MIRAI applicable parameters for dependencies and call MIRAI
             // to analyze targets in the current package.
