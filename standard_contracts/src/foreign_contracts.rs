@@ -186,7 +186,7 @@ pub mod alloc {
 
     pub mod sync {
         fn MAX_REFCOUNT() -> usize {
-            (isize::MAX) as usize
+            (ISIZE_MAX!()) as usize
         }
     }
 
@@ -2820,12 +2820,26 @@ pub mod core {
                 b
             }
             default_contract!(breakpoint);
-            pub unsafe fn move_val_init<T>(dst: *mut T, src: T)
-            where
-                T: Copy,
-            {
-                *dst = src;
-            }
+            // pub unsafe fn move_val_init<T>(dst: *mut T, src: T)
+            // where
+            //     T: Copy,
+            // {
+            //     let bw = std::intrinsics::size_of::<T>();
+            //     precondition!((dst as usize) & (bw - 1) == 0);
+            //     *dst = src;
+            // }
+            atomic_store!(move_val_init__i8, i8);
+            atomic_store!(move_val_init__i16, i16);
+            atomic_store!(move_val_init__i32, i32);
+            atomic_store!(move_val_init__i64, i64);
+            atomic_store!(move_val_init__isize, isize);
+            atomic_store!(move_val_init__u8, u8);
+            atomic_store!(move_val_init__u16, u16);
+            atomic_store!(move_val_init__u32, u32);
+            atomic_store!(move_val_init__u64, u64);
+            atomic_store!(move_val_init__usize, usize);
+            atomic_store!(move_val_init__i128, i128);
+            atomic_store!(move_val_init__u128, u128);
             pub fn min_align_of<T>() -> usize {
                 4
             }
@@ -2878,40 +2892,40 @@ pub mod core {
                 a * b + c
             }
 
-            add_with_overflow!(i8, i128, add_with_overflow__i8, std::i8::MAX);
-            add_with_overflow!(i16, i128, add_with_overflow__i16, std::i16::MAX);
-            add_with_overflow!(i32, i128, add_with_overflow__i32, std::i32::MAX);
-            add_with_overflow!(i64, i128, add_with_overflow__i64, std::i64::MAX);
-            add_with_overflow!(isize, i128, add_with_overflow__isize, std::isize::MAX);
-            add_with_overflow!(u8, u128, add_with_overflow__u8, std::u8::MAX);
-            add_with_overflow!(u16, u128, add_with_overflow__u16, std::u16::MAX);
-            add_with_overflow!(u32, u128, add_with_overflow__u32, std::u32::MAX);
-            add_with_overflow!(u64, u128, add_with_overflow__u64, std::u64::MAX);
-            add_with_overflow!(usize, u128, add_with_overflow__usize, std::usize::MAX);
+            add_with_overflow!(i8, i128, add_with_overflow__i8, I8_MAX!());
+            add_with_overflow!(i16, i128, add_with_overflow__i16, I16_MAX!());
+            add_with_overflow!(i32, i128, add_with_overflow__i32, I32_MAX!());
+            add_with_overflow!(i64, i128, add_with_overflow__i64, I64_MAX!());
+            add_with_overflow!(isize, i128, add_with_overflow__isize, ISIZE_MAX!());
+            add_with_overflow!(u8, u128, add_with_overflow__u8, U8_MAX!());
+            add_with_overflow!(u16, u128, add_with_overflow__u16, U16_MAX!());
+            add_with_overflow!(u32, u128, add_with_overflow__u32, U32_MAX!());
+            add_with_overflow!(u64, u128, add_with_overflow__u64, U64_MAX!());
+            add_with_overflow!(usize, u128, add_with_overflow__usize, USIZE_MAX!());
             default_contract!(add_with_overflow__i128);
             default_contract!(add_with_overflow__u128);
 
-            sub_with_overflow!(i8, i128, sub_with_overflow__i8, std::i8::MAX);
-            sub_with_overflow!(i16, i128, sub_with_overflow__i16, std::i16::MAX);
-            sub_with_overflow!(i32, i128, sub_with_overflow__i32, std::i32::MAX);
-            sub_with_overflow!(i64, i128, sub_with_overflow__i64, std::i64::MAX);
-            sub_with_overflow!(isize, i128, sub_with_overflow__isize, std::isize::MAX);
-            sub_with_overflow!(u8, i128, sub_with_overflow__u8, std::u8::MAX);
-            sub_with_overflow!(u16, i128, sub_with_overflow__u16, std::u16::MAX);
-            sub_with_overflow!(u32, i128, sub_with_overflow__u32, std::u32::MAX);
-            sub_with_overflow!(u64, i128, sub_with_overflow__u64, std::u64::MAX);
-            sub_with_overflow!(usize, i128, sub_with_overflow__usize, std::usize::MAX);
+            sub_with_overflow!(i8, i128, sub_with_overflow__i8, I8_MAX!());
+            sub_with_overflow!(i16, i128, sub_with_overflow__i16, I16_MAX!());
+            sub_with_overflow!(i32, i128, sub_with_overflow__i32, I32_MAX!());
+            sub_with_overflow!(i64, i128, sub_with_overflow__i64, I64_MAX!());
+            sub_with_overflow!(isize, i128, sub_with_overflow__isize, ISIZE_MAX!());
+            sub_with_overflow!(u8, i128, sub_with_overflow__u8, U8_MAX!());
+            sub_with_overflow!(u16, i128, sub_with_overflow__u16, U16_MAX!());
+            sub_with_overflow!(u32, i128, sub_with_overflow__u32, U32_MAX!());
+            sub_with_overflow!(u64, i128, sub_with_overflow__u64, U64_MAX!());
+            sub_with_overflow!(usize, i128, sub_with_overflow__usize, USIZE_MAX!());
             default_contract!(sub_with_overflow__i128);
             default_contract!(sub_with_overflow__u128);
 
             // Performs an exact division, resulting in undefined behavior when
             // `x % y != 0` or `y == 0` or `x == T::min_value() && y == -1`
-            exact_signed_div!(i8, exact_div__i8, i8::MIN);
-            exact_signed_div!(i16, exact_div__i16, i16::MIN);
-            exact_signed_div!(i32, exact_div__i32, i32::MIN);
-            exact_signed_div!(i64, exact_div__i64, i64::MIN);
-            exact_signed_div!(i128, exact_div__i128, i128::MIN);
-            exact_signed_div!(isize, exact_div__isize, isize::MIN);
+            exact_signed_div!(i8, exact_div__i8, I8_MIN!());
+            exact_signed_div!(i16, exact_div__i16, I16_MIN!());
+            exact_signed_div!(i32, exact_div__i32, I32_MIN!());
+            exact_signed_div!(i64, exact_div__i64, I64_MIN!());
+            exact_signed_div!(i128, exact_div__i128, I128_MIN!());
+            exact_signed_div!(isize, exact_div__isize, ISIZE_MIN!());
             exact_div!(u8, exact_div__u8);
             exact_div!(u16, exact_div__u16);
             exact_div!(u32, exact_div__u32);
@@ -2919,12 +2933,12 @@ pub mod core {
             exact_div!(u128, exact_div__u128);
             exact_div!(usize, exact_div__usize);
 
-            unchecked_signed_div!(i8, unchecked_div__i8, i8::MIN);
-            unchecked_signed_div!(i16, unchecked_div__i16, i16::MIN);
-            unchecked_signed_div!(i32, unchecked_div__i32, i32::MIN);
-            unchecked_signed_div!(i64, unchecked_div__i64, i64::MIN);
-            unchecked_signed_div!(i128, unchecked_div__i128, i128::MIN);
-            unchecked_signed_div!(isize, unchecked_div__isize, isize::MIN);
+            unchecked_signed_div!(i8, unchecked_div__i8, I8_MIN!());
+            unchecked_signed_div!(i16, unchecked_div__i16, I16_MIN!());
+            unchecked_signed_div!(i32, unchecked_div__i32, I32_MIN!());
+            unchecked_signed_div!(i64, unchecked_div__i64, I64_MIN!());
+            unchecked_signed_div!(i128, unchecked_div__i128, I128_MIN!());
+            unchecked_signed_div!(isize, unchecked_div__isize, ISIZE_MIN!());
             unchecked_div!(u8, unchecked_div__u8);
             unchecked_div!(u16, unchecked_div__u16);
             unchecked_div!(u32, unchecked_div__u32);
@@ -2932,12 +2946,12 @@ pub mod core {
             unchecked_div!(u128, unchecked_div__u128);
             unchecked_div!(usize, unchecked_div__usize);
 
-            unchecked_signed_rem!(i8, unchecked_rem__i8, i8::MIN);
-            unchecked_signed_rem!(i16, unchecked_rem__i16, i16::MIN);
-            unchecked_signed_rem!(i32, unchecked_rem__i32, i32::MIN);
-            unchecked_signed_rem!(i64, unchecked_rem__i64, i64::MIN);
-            unchecked_signed_rem!(i128, unchecked_rem__i128, i128::MIN);
-            unchecked_signed_rem!(isize, unchecked_rem__isize, isize::MIN);
+            unchecked_signed_rem!(i8, unchecked_rem__i8, I8_MIN!());
+            unchecked_signed_rem!(i16, unchecked_rem__i16, I16_MIN!());
+            unchecked_signed_rem!(i32, unchecked_rem__i32, I32_MIN!());
+            unchecked_signed_rem!(i64, unchecked_rem__i64, I64_MIN!());
+            unchecked_signed_rem!(i128, unchecked_rem__i128, I128_MIN!());
+            unchecked_signed_rem!(isize, unchecked_rem__isize, ISIZE_MIN!());
             unchecked_rem!(u8, unchecked_rem__u8);
             unchecked_rem!(u16, unchecked_rem__u16);
             unchecked_rem!(u32, unchecked_rem__u32);
@@ -2971,28 +2985,28 @@ pub mod core {
             unchecked_shr!(u128, unchecked_shr__u128);
             unchecked_shr!(usize, unchecked_shr__usize);
 
-            unchecked_add!(i8, i128, unchecked_add__i8, i8::MAX);
-            unchecked_add!(i16, i128, unchecked_add__i16, i16::MAX);
-            unchecked_add!(i32, i128, unchecked_add__i32, i32::MAX);
-            unchecked_add!(i64, i128, unchecked_add__i64, i64::MAX);
-            unchecked_add!(i128, i128, unchecked_add__i128, i128::MAX);
-            unchecked_add!(isize, i128, unchecked_add__isize, i128::MAX);
-            unchecked_add!(u8, u128, unchecked_add__u8, u8::MAX);
-            unchecked_add!(u16, u128, unchecked_add__u16, u16::MAX);
-            unchecked_add!(u32, u128, unchecked_add__u32, u32::MAX);
-            unchecked_add!(u64, u128, unchecked_add__u64, u64::MAX);
-            unchecked_add!(u128, u128, unchecked_add__u128, u128::MAX);
-            unchecked_add!(usize, u128, unchecked_add__usize, usize::MAX);
+            unchecked_add!(i8, i128, unchecked_add__i8, I8_MAX!());
+            unchecked_add!(i16, i128, unchecked_add__i16, I16_MAX!());
+            unchecked_add!(i32, i128, unchecked_add__i32, I32_MAX!());
+            unchecked_add!(i64, i128, unchecked_add__i64, I64_MAX!());
+            unchecked_add!(i128, i128, unchecked_add__i128, I128_MAX!());
+            unchecked_add!(isize, i128, unchecked_add__isize, I128_MAX!());
+            unchecked_add!(u8, u128, unchecked_add__u8, U8_MAX!());
+            unchecked_add!(u16, u128, unchecked_add__u16, U16_MAX!());
+            unchecked_add!(u32, u128, unchecked_add__u32, U32_MAX!());
+            unchecked_add!(u64, u128, unchecked_add__u64, U64_MAX!());
+            unchecked_add!(u128, u128, unchecked_add__u128, u128_MAX!());
+            unchecked_add!(usize, u128, unchecked_add__usize, USIZE_MAX!());
 
-            unchecked_sub!(i8, unchecked_sub__i8, i8::MAX);
-            unchecked_sub!(i16, unchecked_sub__i16, i16::MAX);
-            unchecked_sub!(i32, unchecked_sub__i32, i32::MAX);
-            unchecked_sub!(i64, unchecked_sub__i64, i64::MAX);
-            unchecked_sub!(isize, unchecked_sub__isize, i128::MAX);
-            unchecked_sub!(u8, unchecked_sub__u8, u8::MAX);
-            unchecked_sub!(u16, unchecked_sub__u16, u16::MAX);
-            unchecked_sub!(u32, unchecked_sub__u32, u32::MAX);
-            unchecked_sub!(u64, unchecked_sub__u64, u64::MAX);
+            unchecked_sub!(i8, unchecked_sub__i8, I8_MAX!());
+            unchecked_sub!(i16, unchecked_sub__i16, I16_MAX!());
+            unchecked_sub!(i32, unchecked_sub__i32, I32_MAX!());
+            unchecked_sub!(i64, unchecked_sub__i64, I64_MAX!());
+            unchecked_sub!(isize, unchecked_sub__isize, I128_MAX!());
+            unchecked_sub!(u8, unchecked_sub__u8, U8_MAX!());
+            unchecked_sub!(u16, unchecked_sub__u16, U16_MAX!());
+            unchecked_sub!(u32, unchecked_sub__u32, U32_MAX!());
+            unchecked_sub!(u64, unchecked_sub__u64, U64_MAX!());
             pub fn unchecked_sub__usize(x: usize, y: usize) -> usize {
                 // Do not enable these preconditions until the prover can handle ptr1 - ptr2
                 // where ptr1 has been widened.
@@ -3003,18 +3017,18 @@ pub mod core {
                 Wrapping(x).sub(Wrapping(y)).0
             }
 
-            unchecked_mul!(i8, i128, unchecked_mul__i8, i8::MAX);
-            unchecked_mul!(i16, i128, unchecked_mul__i16, i16::MAX);
-            unchecked_mul!(i32, i128, unchecked_mul__i32, i32::MAX);
-            unchecked_mul!(i64, i128, unchecked_mul__i64, i64::MAX);
-            unchecked_mul!(i128, i128, unchecked_mul__i128, i128::MAX);
-            unchecked_mul!(isize, i128, unchecked_mul__isize, isize::MAX);
-            unchecked_mul!(u8, u128, unchecked_mul__u8, u8::MAX);
-            unchecked_mul!(u16, u128, unchecked_mul__u16, u16::MAX);
-            unchecked_mul!(u32, u128, unchecked_mul__u32, u32::MAX);
-            unchecked_mul!(u64, u128, unchecked_mul__u64, u64::MAX);
-            unchecked_mul!(u128, u128, unchecked_mul__u128, u128::MAX);
-            unchecked_mul!(usize, u128, unchecked_mul__usize, usize::MAX);
+            unchecked_mul!(i8, i128, unchecked_mul__i8, I8_MAX!());
+            unchecked_mul!(i16, i128, unchecked_mul__i16, I16_MAX!());
+            unchecked_mul!(i32, i128, unchecked_mul__i32, I32_MAX!());
+            unchecked_mul!(i64, i128, unchecked_mul__i64, I64_MAX!());
+            unchecked_mul!(i128, i128, unchecked_mul__i128, I128_MAX!());
+            unchecked_mul!(isize, i128, unchecked_mul__isize, ISIZE_MAX!());
+            unchecked_mul!(u8, u128, unchecked_mul__u8, U8_MAX!());
+            unchecked_mul!(u16, u128, unchecked_mul__u16, U16_MAX!());
+            unchecked_mul!(u32, u128, unchecked_mul__u32, U32_MAX!());
+            unchecked_mul!(u64, u128, unchecked_mul__u64, U64_MAX!());
+            unchecked_mul!(u128, u128, unchecked_mul__u128, u128_MAX!());
+            unchecked_mul!(usize, u128, unchecked_mul__usize, USIZE_MAX!());
 
             // rotate_left: (X << (S % BW)) | (X >> ((BW - S) % BW))
             rotate_left!(i8, rotate_left__i8);
@@ -3045,57 +3059,57 @@ pub mod core {
             rotate_right!(usize, rotate_right__usize);
 
             // (a + b) mod 2<sup>N</sup>, where N is the width of T
-            wrapping_add!(i8, i128, wrapping_add__i8, i8::MAX);
-            wrapping_add!(i16, i128, wrapping_add__i16, i16::MAX);
-            wrapping_add!(i32, i128, wrapping_add__i32, i32::MAX);
-            wrapping_add!(i64, i128, wrapping_add__i64, i64::MAX);
-            wrapping_add!(isize, i128, wrapping_add__isize, isize::MAX);
-            wrapping_add!(u8, u128, wrapping_add__u8, u8::MAX);
-            wrapping_add!(u16, u128, wrapping_add__u16, u16::MAX);
-            wrapping_add!(u32, u128, wrapping_add__u32, u32::MAX);
-            wrapping_add!(u64, u128, wrapping_add__u64, u64::MAX);
-            wrapping_add!(usize, u128, wrapping_add__usize, usize::MAX);
+            wrapping_add!(i8, i128, wrapping_add__i8, I8_MAX!());
+            wrapping_add!(i16, i128, wrapping_add__i16, I16_MAX!());
+            wrapping_add!(i32, i128, wrapping_add__i32, I32_MAX!());
+            wrapping_add!(i64, i128, wrapping_add__i64, I64_MAX!());
+            wrapping_add!(isize, i128, wrapping_add__isize, ISIZE_MAX!());
+            wrapping_add!(u8, u128, wrapping_add__u8, U8_MAX!());
+            wrapping_add!(u16, u128, wrapping_add__u16, U16_MAX!());
+            wrapping_add!(u32, u128, wrapping_add__u32, U32_MAX!());
+            wrapping_add!(u64, u128, wrapping_add__u64, U64_MAX!());
+            wrapping_add!(usize, u128, wrapping_add__usize, USIZE_MAX!());
             default_contract!(wrapping_add__i128);
             default_contract!(wrapping_add__u128);
 
             // (a - b) mod 2 ** N, where N is the width of T in bits.
-            wrapping_sub!(i8, i128, wrapping_sub__i8, i8::MAX);
-            wrapping_sub!(i16, i128, wrapping_sub__i16, i16::MAX);
-            wrapping_sub!(i32, i128, wrapping_sub__i32, i32::MAX);
-            wrapping_sub!(i64, i128, wrapping_sub__i64, i64::MAX);
-            wrapping_sub!(isize, i128, wrapping_sub__isize, isize::MAX);
-            wrapping_sub!(u8, i128, wrapping_sub__u8, u8::MAX);
-            wrapping_sub!(u16, i128, wrapping_sub__u16, u16::MAX);
-            wrapping_sub!(u32, i128, wrapping_sub__u32, u32::MAX);
-            wrapping_sub!(u64, i128, wrapping_sub__u64, u64::MAX);
-            wrapping_sub!(usize, i128, wrapping_sub__usize, usize::MAX);
+            wrapping_sub!(i8, i128, wrapping_sub__i8, I8_MAX!());
+            wrapping_sub!(i16, i128, wrapping_sub__i16, I16_MAX!());
+            wrapping_sub!(i32, i128, wrapping_sub__i32, I32_MAX!());
+            wrapping_sub!(i64, i128, wrapping_sub__i64, I64_MAX!());
+            wrapping_sub!(isize, i128, wrapping_sub__isize, ISIZE_MAX!());
+            wrapping_sub!(u8, i128, wrapping_sub__u8, U8_MAX!());
+            wrapping_sub!(u16, i128, wrapping_sub__u16, U16_MAX!());
+            wrapping_sub!(u32, i128, wrapping_sub__u32, U32_MAX!());
+            wrapping_sub!(u64, i128, wrapping_sub__u64, U64_MAX!());
+            wrapping_sub!(usize, i128, wrapping_sub__usize, USIZE_MAX!());
             default_contract!(wrapping_sub__i128);
             default_contract!(wrapping_sub__u128);
 
             // (a * b) mod 2 ** N, where N is the width of T in bits.
-            wrapping_mul!(i8, i128, wrapping_mul__i8, i8::MAX);
-            wrapping_mul!(i16, i128, wrapping_mul__i16, i16::MAX);
-            wrapping_mul!(i32, i128, wrapping_mul__i32, i32::MAX);
-            wrapping_mul!(i64, i128, wrapping_mul__i64, i64::MAX);
-            wrapping_mul!(isize, i128, wrapping_mul__isize, isize::MAX);
-            wrapping_mul!(u8, u128, wrapping_mul__u8, u8::MAX);
-            wrapping_mul!(u16, u128, wrapping_mul__u16, u16::MAX);
-            wrapping_mul!(u32, u128, wrapping_mul__u32, u32::MAX);
-            wrapping_mul!(u64, u128, wrapping_mul__u64, u64::MAX);
-            wrapping_mul!(usize, u128, wrapping_mul__usize, usize::MAX);
+            wrapping_mul!(i8, i128, wrapping_mul__i8, I8_MAX!());
+            wrapping_mul!(i16, i128, wrapping_mul__i16, I16_MAX!());
+            wrapping_mul!(i32, i128, wrapping_mul__i32, I32_MAX!());
+            wrapping_mul!(i64, i128, wrapping_mul__i64, I64_MAX!());
+            wrapping_mul!(isize, i128, wrapping_mul__isize, ISIZE_MAX!());
+            wrapping_mul!(u8, u128, wrapping_mul__u8, U8_MAX!());
+            wrapping_mul!(u16, u128, wrapping_mul__u16, U16_MAX!());
+            wrapping_mul!(u32, u128, wrapping_mul__u32, U32_MAX!());
+            wrapping_mul!(u64, u128, wrapping_mul__u64, U64_MAX!());
+            wrapping_mul!(usize, u128, wrapping_mul__usize, USIZE_MAX!());
             default_contract!(wrapping_mul__i128);
             default_contract!(wrapping_mul__u128);
 
-            saturating_add!(i8, i128, saturating_add__i8, i8::MAX);
-            saturating_add!(i16, i128, saturating_add__i16, i16::MAX);
-            saturating_add!(i32, i128, saturating_add__i32, i32::MAX);
-            saturating_add!(i64, i128, saturating_add__i64, i64::MAX);
-            saturating_add!(isize, i128, saturating_add__isize, isize::MAX);
-            saturating_add!(u8, u128, saturating_add__u8, u8::MAX);
-            saturating_add!(u16, u128, saturating_add__u16, u16::MAX);
-            saturating_add!(u32, u128, saturating_add__u32, u32::MAX);
-            saturating_add!(u64, u128, saturating_add__u64, u64::MAX);
-            saturating_add!(usize, u128, saturating_add__usize, usize::MAX);
+            saturating_add!(i8, i128, saturating_add__i8, I8_MAX!());
+            saturating_add!(i16, i128, saturating_add__i16, I16_MAX!());
+            saturating_add!(i32, i128, saturating_add__i32, I32_MAX!());
+            saturating_add!(i64, i128, saturating_add__i64, I64_MAX!());
+            saturating_add!(isize, i128, saturating_add__isize, ISIZE_MAX!());
+            saturating_add!(u8, u128, saturating_add__u8, U8_MAX!());
+            saturating_add!(u16, u128, saturating_add__u16, U16_MAX!());
+            saturating_add!(u32, u128, saturating_add__u32, U32_MAX!());
+            saturating_add!(u64, u128, saturating_add__u64, U64_MAX!());
+            saturating_add!(usize, u128, saturating_add__usize, USIZE_MAX!());
             default_contract!(saturating_add__i128);
             default_contract!(saturating_add__u128);
 
@@ -4496,10 +4510,10 @@ pub mod ref_cast {
     pub mod layout {
         pub mod LayoutUnsized {
             pub fn ALIGN() -> usize {
-                usize::MAX
+                USIZE_MAX!()
             }
             pub fn SIZE() -> usize {
-                usize::MAX
+                USIZE_MAX!()
             }
         }
     }
