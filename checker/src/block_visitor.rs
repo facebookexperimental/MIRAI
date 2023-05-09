@@ -1170,7 +1170,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     .sess
                     .source_map()
                     .span_to_diagnostic_string(*pc_span);
-                warning.span_note(*pc_span, &format!("related location {span_str}"));
+                warning.span_note(*pc_span, format!("related location {span_str}"));
             }
         }
         self.bv.emit_diagnostic(warning);

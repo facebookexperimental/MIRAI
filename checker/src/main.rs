@@ -71,7 +71,7 @@ fn main() {
     let mut rustc_command_line_arguments = options.parse(&args[1..], false);
     info!("MIRAI options modified by command line: {:?}", options);
 
-    rustc_driver::install_ice_hook();
+    rustc_driver::install_ice_hook(rustc_driver::DEFAULT_BUG_REPORT_URL, |_| ());
     let result = rustc_driver::catch_fatal_errors(|| {
         // Add back the binary name
         rustc_command_line_arguments.insert(0, args[0].clone());
