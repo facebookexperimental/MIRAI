@@ -340,3 +340,134 @@ macro_rules! wrapping_sub {
         }
     };
 }
+
+macro_rules! I8_MAX {
+    () => {
+        127
+    };
+}
+macro_rules! I16_MAX {
+    () => {
+        32767
+    };
+}
+macro_rules! I32_MAX {
+    () => {
+        2147483647
+    };
+}
+macro_rules! I64_MAX {
+    () => {
+        9223372036854775807
+    };
+}
+macro_rules! I128_MAX {
+    () => {
+        170141183460469231731687303715884105727
+    };
+}
+macro_rules! ISIZE_MAX {
+    () => {
+        if cfg!(any(
+            target_arch = "x86",
+            target_arch = "mips",
+            target_arch = "powerpc",
+            target_arch = "arm"
+        )) {
+            2147483647isize
+        } else if cfg!(any(
+            target_arch = "x86_64",
+            target_arch = "powerpc64",
+            target_arch = "aarch64"
+        )) {
+            9223372036854775807isize
+        } else {
+            panic!("Unsupported architecture");
+        }
+    };
+}
+macro_rules! I8_MIN {
+    () => {
+        -128
+    };
+}
+macro_rules! I16_MIN {
+    () => {
+        -32768
+    };
+}
+macro_rules! I32_MIN {
+    () => {
+        -2147483648
+    };
+}
+macro_rules! I64_MIN {
+    () => {
+        -9223372036854775808
+    };
+}
+macro_rules! I128_MIN {
+    () => {
+        -170141183460469231731687303715884105728
+    };
+}
+macro_rules! ISIZE_MIN {
+    () => {
+        if cfg!(any(
+            target_arch = "x86",
+            target_arch = "mips",
+            target_arch = "powerpc",
+            target_arch = "arm"
+        )) {
+            -2147483648isize
+        } else if cfg!(any(
+            target_arch = "x86_64",
+            target_arch = "powerpc64",
+            target_arch = "aarch64"
+        )) {
+            -9223372036854775808isize
+        } else {
+            panic!("Unsupported architecture");
+        }
+    };
+}
+macro_rules! U8_MAX {
+    () => {
+        255
+    };
+}
+macro_rules! U16_MAX {
+    () => {
+        65535
+    };
+}
+macro_rules! U32_MAX {
+    () => {
+        4294967295
+    };
+}
+macro_rules! U64_MAX {
+    () => {
+        18446744073709551615
+    };
+}
+macro_rules! USIZE_MAX {
+    () => {
+        if cfg!(any(
+            target_arch = "x86",
+            target_arch = "mips",
+            target_arch = "powerpc",
+            target_arch = "arm"
+        )) {
+            4294967295usize
+        } else if cfg!(any(
+            target_arch = "x86_64",
+            target_arch = "powerpc64",
+            target_arch = "aarch64"
+        )) {
+            18446744073709551615usize
+        } else {
+            panic!("Unsupported architecture");
+        }
+    };
+}
