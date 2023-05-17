@@ -5,6 +5,9 @@
 /// <https://docs.substrate.io/reference/frame-pallets/>
 pub use pallet::*;
 
+#[macro_use]
+extern crate mirai_annotations;
+
 #[cfg(test)]
 mod mock;
 
@@ -15,8 +18,8 @@ mod tests;
 mod benchmarking;
 pub mod weights;
 
-#[macro_use]
-extern crate mirai_annotations;
+#[cfg(mirai)]
+pub mod mirai;
 
 pub use weights::*;
 
@@ -108,13 +111,5 @@ pub mod pallet {
 				},
 			}
 		}
-	}
-}
-
-pub mod mirai_check_that_fails {
-
-	pub fn test_failure() {
-		// System::set_block_number(1);
-		verify!(false);
 	}
 }
