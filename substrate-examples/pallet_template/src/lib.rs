@@ -8,7 +8,7 @@ pub use pallet::*;
 #[macro_use]
 extern crate mirai_annotations;
 
-#[cfg(test)]
+#[cfg(mirai)]
 mod mock;
 
 #[cfg(test)]
