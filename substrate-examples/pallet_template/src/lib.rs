@@ -39,6 +39,8 @@ pub mod pallet {
 		type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
 		/// Type representing the weight of this pallet
 		type WeightInfo: WeightInfo;
+		// Specifies the account that can perform some action
+		type ForceOrigin: EnsureOrigin<Self::RuntimeOrigin>;
 	}
 
 	// The pallet's runtime storage items.
@@ -78,6 +80,7 @@ pub mod pallet {
 		#[pallet::call_index(0)]
 		#[pallet::weight(T::WeightInfo::do_something())]
 		pub fn do_something(origin: OriginFor<T>, something: u32) -> DispatchResult {
+			T::ForceOrigin::ensure_origin(origin.clone())?;
 			// Check that the extrinsic was signed and get the signer.
 			// This function will return an error if the extrinsic is not signed.
 			// https://docs.substrate.io/main-docs/build/origins/
