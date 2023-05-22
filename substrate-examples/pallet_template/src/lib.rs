@@ -9,6 +9,20 @@ pub use pallet::*;
 extern crate mirai_annotations;
 
 #[cfg(mirai)]
+use mirai_annotations::{TagPropagation, TagPropagationSet};
+
+#[cfg(mirai)]
+struct SecretTaintKind<const MASK: TagPropagationSet> {}
+
+#[cfg(mirai)]
+const SECRET_TAINT_MASK: TagPropagationSet = tag_propagation_set!(TagPropagation::SubComponent);
+
+#[cfg(mirai)]
+type SecretTaint = SecretTaintKind<SECRET_TAINT_MASK>;
+#[cfg(not(mirai))]
+type SecretTaint = ();
+
+#[cfg(mirai)]
 mod mock;
 
 #[cfg(test)]
@@ -80,14 +94,14 @@ pub mod pallet {
 		#[pallet::call_index(0)]
 		#[pallet::weight(T::WeightInfo::do_something())]
 		pub fn do_something(origin: OriginFor<T>, something: u32) -> DispatchResult {
-			T::ForceOrigin::ensure_origin(origin.clone())?;
+			Self::sarp_ensure_origin(origin.clone())?;
 			// Check that the extrinsic was signed and get the signer.
 			// This function will return an error if the extrinsic is not signed.
 			// https://docs.substrate.io/main-docs/build/origins/
-			let who = ensure_signed(origin)?;
+			let who = ensure_signed(origin.clone())?;
 
 			// Update storage.
-			<Something<T>>::put(something);
+			Self::sarp_put_sensitive_value(origin, something)?;
 
 			// Emit an event.
 			Self::deposit_event(Event::SomethingStored { something, who });
@@ -113,6 +127,21 @@ pub mod pallet {
 					Ok(())
 				},
 			}
+		}
+	}
+
+	impl<T: Config> Pallet<T> {
+
+		fn sarp_ensure_origin(origin: OriginFor<T>) -> DispatchResult {
+			T::ForceOrigin::ensure_origin(origin.clone())?;
+			add_tag!(&origin, SecretTaint);
+			Ok(())
+		}
+
+		fn sarp_put_sensitive_value(origin: OriginFor<T>, something: u32) -> DispatchResult {
+			verify!(has_tag!(&origin, SecretTaint));
+			<Something<T>>::put(something);
+			Ok(())
 		}
 	}
 }
