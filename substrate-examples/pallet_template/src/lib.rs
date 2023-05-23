@@ -103,7 +103,8 @@ pub mod pallet {
 			// https://docs.substrate.io/main-docs/build/origins/
 			let who = ensure_signed(origin.clone())?;
 
-			add_tag!(&origin, SecretTaint);
+			// add_tag!(&origin, SecretTaint);
+			verify!(has_tag!(&origin, SecretTaint));
 
 			// Update storage.
 			// Self::sarp_put_sensitive_value(origin, something)?;
