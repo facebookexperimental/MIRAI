@@ -26,6 +26,9 @@ type SecretTaint = ();
 mod mock;
 
 #[cfg(test)]
+mod mock;
+
+#[cfg(test)]
 mod tests;
 
 #[cfg(feature = "runtime-benchmarks")]
@@ -94,14 +97,17 @@ pub mod pallet {
 		#[pallet::call_index(0)]
 		#[pallet::weight(T::WeightInfo::do_something())]
 		pub fn do_something(origin: OriginFor<T>, something: u32) -> DispatchResult {
-			Self::sarp_ensure_origin(origin.clone())?;
+			// Self::sarp_ensure_origin(origin.clone())?;
 			// Check that the extrinsic was signed and get the signer.
 			// This function will return an error if the extrinsic is not signed.
 			// https://docs.substrate.io/main-docs/build/origins/
 			let who = ensure_signed(origin.clone())?;
 
+			add_tag!(&origin, SecretTaint);
+
 			// Update storage.
-			Self::sarp_put_sensitive_value(origin, something)?;
+			// Self::sarp_put_sensitive_value(origin, something)?;
+			<Something<T>>::put(something);
 
 			// Emit an event.
 			Self::deposit_event(Event::SomethingStored { something, who });
@@ -132,16 +138,5 @@ pub mod pallet {
 
 	impl<T: Config> Pallet<T> {
 
-		fn sarp_ensure_origin(origin: OriginFor<T>) -> DispatchResult {
-			T::ForceOrigin::ensure_origin(origin.clone())?;
-			add_tag!(&origin, SecretTaint);
-			Ok(())
-		}
-
-		fn sarp_put_sensitive_value(origin: OriginFor<T>, something: u32) -> DispatchResult {
-			verify!(has_tag!(&origin, SecretTaint));
-			<Something<T>>::put(something);
-			Ok(())
-		}
 	}
 }

@@ -53,3 +53,8 @@ impl pallet_template::Config for Test {
 	type WeightInfo = ();
 	type ForceOrigin = frame_system::EnsureRoot<u64>;
 }
+
+// Build genesis storage according to the mock runtime.
+pub fn new_test_ext() -> sp_io::TestExternalities {
+	frame_system::GenesisConfig::default().build_storage::<Test>().unwrap().into()
+}
