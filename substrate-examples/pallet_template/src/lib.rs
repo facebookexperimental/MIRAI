@@ -45,6 +45,7 @@ pub mod pallet {
 	use super::*;
 	use frame_support::pallet_prelude::*;
 	use frame_system::pallet_prelude::*;
+	use frame_support::error::BadOrigin;
 
 	#[pallet::pallet]
 	pub struct Pallet<T>(_);
@@ -101,9 +102,11 @@ pub mod pallet {
 			// Check that the extrinsic was signed and get the signer.
 			// This function will return an error if the extrinsic is not signed.
 			// https://docs.substrate.io/main-docs/build/origins/
-			let who = ensure_signed(origin.clone())?;
+			// Self::add_tag(&origin);
+			let who = Self::sarp_ensure_signed(origin.clone())?;
 
 			// add_tag!(&origin, SecretTaint);
+			// Self::add_tag(&origin);
 			verify!(has_tag!(&origin, SecretTaint));
 
 			// Update storage.
@@ -139,5 +142,13 @@ pub mod pallet {
 
 	impl<T: Config> Pallet<T> {
 
+		fn sarp_ensure_signed(origin: OriginFor<T>) -> Result<T::AccountId, BadOrigin> {
+			add_tag!(&origin, SecretTaint);
+			ensure_signed(origin.clone())
+		}
+
+		fn add_tag(origin: &OriginFor<T>) {
+			add_tag!(origin, SecretTaint);
+		}
 	}
 }

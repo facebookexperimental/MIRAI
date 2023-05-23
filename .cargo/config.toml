@@ -2,4 +2,4 @@
 MIRAI_FLAGS = "--single_func=pallet_template.mirai.mirai_check_that_fails.test_failure"
 #MIRAI_FLAGS = { value = "--diag=paranoid --single_func=pallet_template.mirai.mirai_check_that_fails.test_failure", force = true }
 #MIRAI_FLAGS = { value = "--diag=paranoid", force = true }
-#MIRAI_LOG = { value = "debug", force = true }
+MIRAI_LOG = { value = "debug", force = true }
