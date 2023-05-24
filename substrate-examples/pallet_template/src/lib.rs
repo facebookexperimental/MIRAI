@@ -139,8 +139,8 @@ pub mod pallet {
 
 			// Update storage.
 			// add_tag!(&tagged_value, SecretTaint);
-			Self::verify_has_tag(&tagged_value);
-			// Self::sarp_put_sensitive_value(origin, something, &tagged_value)?;
+			// Self::verify_has_tag(&tagged_value);
+			Self::sarp_put_sensitive_value(origin, something, &tagged_value)?;
 
 			// Emit an event.
 			// Self::deposit_event(Event::SomethingStored { something, who });
@@ -155,7 +155,7 @@ pub mod pallet {
 
 		fn sarp_put_sensitive_value(origin: OriginFor<T>, something: u32, tagged_value: &u32) -> DispatchResult {
 			precondition!(has_tag!(tagged_value, SecretTaint));
-			<Something<T>>::put(something);
+			// <Something<T>>::put(something);
 			Ok(())
 		}
 
