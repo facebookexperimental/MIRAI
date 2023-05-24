@@ -98,7 +98,27 @@ pub mod pallet {
 		#[pallet::call_index(0)]
 		#[pallet::weight(T::WeightInfo::do_something())]
 		pub fn do_something(origin: OriginFor<T>, something: u32) -> DispatchResult {
-			Self::do_something_non_pallet(origin, something)
+			// Self::sarp_ensure_origin(origin.clone())?;
+			// Check that the extrinsic was signed and get the signer.
+			// This function will return an error if the extrinsic is not signed.
+			// https://docs.substrate.io/main-docs/build/origins/
+			// Self::add_tag(&origin);
+			let tagged_value = 1;
+			let who = Self::sarp_ensure_signed(origin.clone(), &tagged_value)?;
+
+			// add_tag!(&origin, SecretTaint);
+			// Self::add_tag(&origin);
+			// verify!(has_tag!(&tagged_value, SecretTaint));
+
+			// Update storage.
+			// add_tag!(&tagged_value, SecretTaint);
+			// Self::verify_has_tag(&tagged_value);
+			Self::sarp_put_sensitive_value(origin, something, &tagged_value)?;
+
+			// Emit an event.
+			// Self::deposit_event(Event::SomethingStored { something, who });
+			// Return a successful DispatchResultWithPostInfo
+			Ok(())
 		}
 
 		/// An example dispatchable that may throw a custom error.
@@ -155,7 +175,7 @@ pub mod pallet {
 
 		fn sarp_put_sensitive_value(origin: OriginFor<T>, something: u32, tagged_value: &u32) -> DispatchResult {
 			precondition!(has_tag!(tagged_value, SecretTaint));
-			// <Something<T>>::put(something);
+			<Something<T>>::put(something);
 			Ok(())
 		}
 

@@ -21,8 +21,8 @@ pub mod mirai_check_that_fails {
 
     pub fn test_failure() {
         let origin = RuntimeOrigin::signed(1);
-        // let _ = TemplateModule::do_something(origin, 42);
-        let _ = TemplateModule::do_something_non_pallet(origin, 42);
+        let _ = TemplateModule::do_something(origin, 42);
+        // let _ = TemplateModule::do_something_non_pallet(origin, 42);
         // verify!(false);
         // let s = SabineTest{};
         // s.false_precon();
