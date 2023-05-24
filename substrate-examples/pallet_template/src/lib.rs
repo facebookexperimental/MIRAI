@@ -100,8 +100,10 @@ pub mod pallet {
 		pub fn do_something(origin: OriginFor<T>, something: u32) -> DispatchResult {
 
 			let tagged_value = 1;
-			// let who = Self::sarp_ensure_signed(origin.clone(), &tagged_value)?;
-			let who = ensure_signed(origin.clone())?;
+
+			// switch between the next two lines to either get a precondition failure in sarp_put_sensitive_value or not
+			let who = Self::sarp_ensure_signed(origin.clone(), &tagged_value)?;
+			// let who = ensure_signed(origin.clone())?;
 
 			Self::sarp_put_sensitive_value(origin, something, &tagged_value)?;
 
