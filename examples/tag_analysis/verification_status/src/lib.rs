@@ -63,11 +63,6 @@ impl NetworkSender {
 
     /// Send the vote to the chosen recipients.
     pub fn send_vote(&self, vote_msg: VoteMsg, _recipients: Vec<String>) {
-        self.check_internal(vote_msg);
-        //precondition!(has_tag!(&vote_msg, crate::Verified));
-    }
-
-    fn check_internal(&self, vote_msg: VoteMsg) {
         precondition!(has_tag!(&vote_msg, crate::Verified));
     }
 }
