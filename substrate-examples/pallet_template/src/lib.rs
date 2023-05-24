@@ -98,26 +98,14 @@ pub mod pallet {
 		#[pallet::call_index(0)]
 		#[pallet::weight(T::WeightInfo::do_something())]
 		pub fn do_something(origin: OriginFor<T>, something: u32) -> DispatchResult {
-			// Self::sarp_ensure_origin(origin.clone())?;
-			// Check that the extrinsic was signed and get the signer.
-			// This function will return an error if the extrinsic is not signed.
-			// https://docs.substrate.io/main-docs/build/origins/
-			// Self::add_tag(&origin);
+
 			let tagged_value = 1;
-			let who = Self::sarp_ensure_signed(origin.clone(), &tagged_value)?;
+			// let who = Self::sarp_ensure_signed(origin.clone(), &tagged_value)?;
+			let who = ensure_signed(origin.clone())?;
 
-			// add_tag!(&origin, SecretTaint);
-			// Self::add_tag(&origin);
-			// verify!(has_tag!(&tagged_value, SecretTaint));
-
-			// Update storage.
-			// add_tag!(&tagged_value, SecretTaint);
-			// Self::verify_has_tag(&tagged_value);
 			Self::sarp_put_sensitive_value(origin, something, &tagged_value)?;
 
-			// Emit an event.
-			// Self::deposit_event(Event::SomethingStored { something, who });
-			// Return a successful DispatchResultWithPostInfo
+			Self::deposit_event(Event::SomethingStored { something, who });
 			Ok(())
 		}
 
@@ -144,32 +132,8 @@ pub mod pallet {
 
 	impl<T: Config> Pallet<T> {
 
-		pub fn do_something_non_pallet(origin: OriginFor<T>, something: u32) -> DispatchResult {
-			// Self::sarp_ensure_origin(origin.clone())?;
-			// Check that the extrinsic was signed and get the signer.
-			// This function will return an error if the extrinsic is not signed.
-			// https://docs.substrate.io/main-docs/build/origins/
-			// Self::add_tag(&origin);
-			let tagged_value = 1;
-			let who = Self::sarp_ensure_signed(origin.clone(), &tagged_value)?;
-
-			// add_tag!(&origin, SecretTaint);
-			// Self::add_tag(&origin);
-			// verify!(has_tag!(&tagged_value, SecretTaint));
-
-			// Update storage.
-			// add_tag!(&tagged_value, SecretTaint);
-			// Self::verify_has_tag(&tagged_value);
-			Self::sarp_put_sensitive_value(origin, something, &tagged_value)?;
-
-			// Emit an event.
-			// Self::deposit_event(Event::SomethingStored { something, who });
-			// Return a successful DispatchResultWithPostInfo
-			Ok(())
-		}
-
 		fn sarp_ensure_signed(origin: OriginFor<T>, tagged_value: &u32) -> Result<T::AccountId, BadOrigin> {
-			// add_tag!(tagged_value, SecretTaint);
+			add_tag!(tagged_value, SecretTaint);
 			ensure_signed(origin.clone())
 		}
 
@@ -177,15 +141,6 @@ pub mod pallet {
 			precondition!(has_tag!(tagged_value, SecretTaint));
 			<Something<T>>::put(something);
 			Ok(())
-		}
-
-		fn verify_has_tag(tagged_value: &u32) {
-			// precondition!(false);
-			precondition!(has_tag!(tagged_value, SecretTaint));
-		}
-
-		fn add_tag(origin: &OriginFor<T>) {
-			add_tag!(origin, SecretTaint);
 		}
 	}
 }
