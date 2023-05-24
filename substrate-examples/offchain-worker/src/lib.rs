@@ -45,6 +45,9 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
+#[macro_use]
+extern crate mirai_annotations;
+
 use codec::{Decode, Encode};
 use frame_support::traits::Get;
 use frame_system::{
@@ -70,6 +73,12 @@ use sp_std::vec::Vec;
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(mirai)]
+mod tests;
+
+#[cfg(mirai)]
+mod mirai;
 
 /// Defines application identifier for crypto keys of this module.
 ///
