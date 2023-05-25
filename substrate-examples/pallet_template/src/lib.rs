@@ -99,13 +99,11 @@ pub mod pallet {
 		#[pallet::weight(T::WeightInfo::do_something())]
 		pub fn do_something(origin: OriginFor<T>, something: u32) -> DispatchResult {
 
-			let tagged_value = 1;
-
 			// switch between the next two lines to either get a precondition failure in sarp_put_sensitive_value or not
-			let who = Self::sarp_ensure_signed(origin.clone(), &tagged_value)?;
+			let who = Self::sarp_ensure_signed(&origin)?;
 			// let who = ensure_signed(origin.clone())?;
 
-			Self::sarp_put_sensitive_value(origin, something, &tagged_value)?;
+			Self::sarp_put_sensitive_value(&origin, something)?;
 
 			Self::deposit_event(Event::SomethingStored { something, who });
 			Ok(())
@@ -134,13 +132,13 @@ pub mod pallet {
 
 	impl<T: Config> Pallet<T> {
 
-		fn sarp_ensure_signed(origin: OriginFor<T>, tagged_value: &u32) -> Result<T::AccountId, BadOrigin> {
-			add_tag!(tagged_value, SecretTaint);
+		fn sarp_ensure_signed(origin: &OriginFor<T>) -> Result<T::AccountId, BadOrigin> {
+			add_tag!(origin, SecretTaint);
 			ensure_signed(origin.clone())
 		}
 
-		fn sarp_put_sensitive_value(origin: OriginFor<T>, something: u32, tagged_value: &u32) -> DispatchResult {
-			precondition!(has_tag!(tagged_value, SecretTaint));
+		fn sarp_put_sensitive_value(origin: &OriginFor<T>, something: u32) -> DispatchResult {
+			precondition!(has_tag!(origin, SecretTaint));
 			<Something<T>>::put(something);
 			Ok(())
 		}
