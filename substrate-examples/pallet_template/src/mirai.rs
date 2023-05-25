@@ -1,10 +1,10 @@
 
-pub mod mirai_check_that_fails {
+pub mod mirai_check {
 
     use crate::mock::TemplateModule;
     use crate::mock::RuntimeOrigin;
 
-    pub fn test_failure() {
+    pub fn code_to_analyze() {
         let _ = TemplateModule::do_something(RuntimeOrigin::signed(1), 42);
     }
 }
