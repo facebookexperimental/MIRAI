@@ -386,13 +386,6 @@ enum TransactionType {
 }
 
 impl<T: Config> Pallet<T> {
-    /*pub fn create_call() -> <pallet::Pallet<T> as tests::sp_api_hidden_includes_construct_runtime::hidden_include::pallet_prelude::ValidateUnsigned>::Call {
-        Call::submit_price_unsigned {
-            block_number: 1,
-            price: 15523
-        }
-    }*/
-
     /// Chooses which transaction type to send.
     ///
     /// This function serves mostly to showcase `StorageValue` helper
