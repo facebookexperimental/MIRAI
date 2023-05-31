@@ -77,7 +77,7 @@ mod tests;
 #[cfg(mirai)]
 mod tests;
 
-#[cfg(mirai)]
+//#[cfg(mirai)]
 mod mirai;
 
 /// Defines application identifier for crypto keys of this module.
@@ -223,6 +223,8 @@ pub mod pallet {
     /// A public part of the pallet.
     #[pallet::call]
     impl<T: Config> Pallet<T> {
+
+
         /// Submit new price to the list.
         ///
         /// This method is a public function of the module and can be called from within
@@ -296,6 +298,13 @@ pub mod pallet {
             <NextUnsignedAt<T>>::put(current_block + T::UnsignedInterval::get());
             Ok(().into())
         }
+
+        #[pallet::call_index(3)]
+		#[pallet::weight(100)]
+		pub fn include_data(origin: OriginFor<T>, _data: Vec<u8>) -> DispatchResult {
+			frame_system::ensure_signed(origin)?;
+			Ok(())
+		}
     }
 
     /// Events for the pallet.
@@ -377,6 +386,13 @@ enum TransactionType {
 }
 
 impl<T: Config> Pallet<T> {
+    /*pub fn create_call() -> <pallet::Pallet<T> as tests::sp_api_hidden_includes_construct_runtime::hidden_include::pallet_prelude::ValidateUnsigned>::Call {
+        Call::submit_price_unsigned {
+            block_number: 1,
+            price: 15523
+        }
+    }*/
+
     /// Chooses which transaction type to send.
     ///
     /// This function serves mostly to showcase `StorageValue` helper
