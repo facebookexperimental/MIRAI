@@ -76,6 +76,21 @@ mod tests;
 #[cfg(mirai)]
 mod mirai;
 
+
+#[cfg(mirai)]
+use mirai_annotations::{TagPropagation, TagPropagationSet};
+
+#[cfg(mirai)]
+struct SecretTaintKind<const MASK: TagPropagationSet> {}
+
+#[cfg(mirai)]
+const SECRET_TAINT_MASK: TagPropagationSet = tag_propagation_set!(TagPropagation::SubComponent);
+
+#[cfg(mirai)]
+type SecretTaint = SecretTaintKind<SECRET_TAINT_MASK>;
+#[cfg(not(mirai))]
+type SecretTaint = ();
+
 /// Defines application identifier for crypto keys of this module.
 ///
 /// Every module that deals with signatures needs to declare its unique identifier for
@@ -320,14 +335,13 @@ pub mod pallet {
         /// By default unsigned transactions are disallowed, but implementing the validator
         /// here we make sure that some particular calls (the ones produced by offchain worker)
         /// are being whitelisted and marked as valid.
-        fn validate_unsigned(_source: TransactionSource, call: &Self::Call) -> TransactionValidity {
-            verify!(false);
+        fn validate_unsigned(_source: TransactionSource, call: &Self::Call) -> TransactionValidity {          
             // Firstly let's check that we call the right function.
             if let Call::submit_price_unsigned_with_signed_payload {
                 price_payload: ref payload,
                 ref signature,
             } = call
-            {
+            {                
                 let signature_valid =
                     SignedPayload::<T>::verify::<T::AuthorityId>(payload, signature.clone());
                 if !signature_valid {
@@ -335,7 +349,10 @@ pub mod pallet {
                 }
                 Self::validate_transaction_parameters(&payload.block_number, &payload.price)
             } else if let Call::submit_price_unsigned { block_number, price: new_price } = call {
-                Self::validate_transaction_parameters(block_number, new_price)
+                let res = Self::validate_transaction_parameters(block_number, new_price);
+                precondition!(has_tag!(new_price, SecretTaint));
+                precondition!(has_tag!(block_number, SecretTaint));
+                res
             } else {
                 InvalidTransaction::Call.into()
             }
@@ -687,6 +704,8 @@ impl<T: Config> Pallet<T> {
         block_number: &T::BlockNumber,
         new_price: &u32,
     ) -> TransactionValidity {
+        add_tag!(block_number, SecretTaint);
+        add_tag!(new_price, SecretTaint);
         // Now let's check if the transaction has any chance to succeed.
         let next_unsigned_at = <NextUnsignedAt<T>>::get();
         if &next_unsigned_at > block_number {
@@ -697,7 +716,7 @@ impl<T: Config> Pallet<T> {
         if &current_block < block_number {
             return InvalidTransaction::Future.into()
         }
-
+        
         // We prioritize transactions that are more far away from current average.
         //
         // Note this doesn't make much sense when building an actual oracle, but this example
