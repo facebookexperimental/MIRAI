@@ -71,13 +71,9 @@ use sp_runtime::{
 };
 use sp_std::vec::Vec;
 
-#[cfg(test)]
 mod tests;
 
 #[cfg(mirai)]
-mod tests;
-
-//#[cfg(mirai)]
 mod mirai;
 
 /// Defines application identifier for crypto keys of this module.
@@ -325,6 +321,7 @@ pub mod pallet {
         /// here we make sure that some particular calls (the ones produced by offchain worker)
         /// are being whitelisted and marked as valid.
         fn validate_unsigned(_source: TransactionSource, call: &Self::Call) -> TransactionValidity {
+            verify!(false);
             // Firstly let's check that we call the right function.
             if let Call::submit_price_unsigned_with_signed_payload {
                 price_payload: ref payload,
@@ -706,9 +703,10 @@ impl<T: Config> Pallet<T> {
         // Note this doesn't make much sense when building an actual oracle, but this example
         // is here mostly to show off offchain workers capabilities, not about building an
         // oracle.
-        let avg_price = Self::average_price()
+        /*let avg_price = Self::average_price()
             .map(|price| if &price > new_price { price - new_price } else { new_price - price })
-            .unwrap_or(0);
+            .unwrap_or(0);*/
+        let avg_price = 0;
 
         ValidTransaction::with_tag_prefix("ExampleOffchainWorker")
             // We set base priority to 2**20 and hope it's included before any other
