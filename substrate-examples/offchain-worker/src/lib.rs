@@ -350,8 +350,7 @@ pub mod pallet {
                 Self::validate_transaction_parameters(&payload.block_number, &payload.price)
             } else if let Call::submit_price_unsigned { block_number, price: new_price } = call {
                 let res = Self::validate_transaction_parameters(block_number, new_price);
-                precondition!(has_tag!(new_price, SecretTaint));
-                precondition!(has_tag!(block_number, SecretTaint));
+                Self::apply_data(block_number, new_price);
                 res
             } else {
                 InvalidTransaction::Call.into()
@@ -700,12 +699,21 @@ impl<T: Config> Pallet<T> {
         }
     }
 
+    fn apply_data(
+        block_number: &T::BlockNumber,
+        new_price: &u32,
+    ) {
+        precondition!(has_tag!(new_price, SecretTaint));
+        precondition!(has_tag!(block_number, SecretTaint));
+    }
+
     fn validate_transaction_parameters(
         block_number: &T::BlockNumber,
         new_price: &u32,
     ) -> TransactionValidity {
         add_tag!(block_number, SecretTaint);
-        add_tag!(new_price, SecretTaint);
+        //add_tag!(new_price, SecretTaint);
+        
         // Now let's check if the transaction has any chance to succeed.
         let next_unsigned_at = <NextUnsignedAt<T>>::get();
         if &next_unsigned_at > block_number {
@@ -722,7 +730,8 @@ impl<T: Config> Pallet<T> {
         // Note this doesn't make much sense when building an actual oracle, but this example
         // is here mostly to show off offchain workers capabilities, not about building an
         // oracle.
-        /*let avg_price = Self::average_price()
+        /* For some reason MIRAI crashes with this code
+        let avg_price = Self::average_price()
             .map(|price| if &price > new_price { price - new_price } else { new_price - price })
             .unwrap_or(0);*/
         let avg_price = 0;
