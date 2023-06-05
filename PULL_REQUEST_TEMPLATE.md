@@ -22,5 +22,4 @@ Fixes # (issue)
 - [ ] If you've changed APIs, update the documentation.
 - [ ] Ensure the test suite passes.
 - [ ] Make sure your code lints.
-- [ ] If you haven't already, complete your CLA here: <https://code.facebook.com/cla>
 
