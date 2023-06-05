@@ -81,15 +81,15 @@ mod mirai;
 use mirai_annotations::{TagPropagation, TagPropagationSet};
 
 #[cfg(mirai)]
-struct SecretTaintKind<const MASK: TagPropagationSet> {}
+struct ParameterVerifiedKind<const MASK: TagPropagationSet> {}
 
 #[cfg(mirai)]
-const SECRET_TAINT_MASK: TagPropagationSet = tag_propagation_set!(TagPropagation::SubComponent);
+const PARAMETER_VERIFIED_MASK: TagPropagationSet = tag_propagation_set!(TagPropagation::SubComponent);
 
 #[cfg(mirai)]
-type SecretTaint = SecretTaintKind<SECRET_TAINT_MASK>;
+type ParameterVerified = ParameterVerifiedKind<PARAMETER_VERIFIED_MASK>;
 #[cfg(not(mirai))]
-type SecretTaint = ();
+type ParameterVerified = ();
 
 /// Defines application identifier for crypto keys of this module.
 ///
@@ -703,17 +703,14 @@ impl<T: Config> Pallet<T> {
         block_number: &T::BlockNumber,
         new_price: &u32,
     ) {
-        precondition!(has_tag!(new_price, SecretTaint));
-        precondition!(has_tag!(block_number, SecretTaint));
+        precondition!(has_tag!(new_price, ParameterVerified));
+        precondition!(has_tag!(block_number, ParameterVerified));
     }
 
     fn validate_transaction_parameters(
         block_number: &T::BlockNumber,
         new_price: &u32,
     ) -> TransactionValidity {
-        add_tag!(block_number, SecretTaint);
-        //add_tag!(new_price, SecretTaint);
-        
         // Now let's check if the transaction has any chance to succeed.
         let next_unsigned_at = <NextUnsignedAt<T>>::get();
         if &next_unsigned_at > block_number {
@@ -724,14 +721,22 @@ impl<T: Config> Pallet<T> {
         if &current_block < block_number {
             return InvalidTransaction::Future.into()
         }
+        add_tag!(block_number, ParameterVerified);
         
+        // Arbitrary check that price is bigger than some value
+        if 100 > *new_price {
+            return InvalidTransaction::Future.into()
+        }
+        add_tag!(new_price, ParameterVerified);
+        
+
         // We prioritize transactions that are more far away from current average.
         //
         // Note this doesn't make much sense when building an actual oracle, but this example
         // is here mostly to show off offchain workers capabilities, not about building an
         // oracle.
-        /* For some reason MIRAI crashes with this code
-        let avg_price = Self::average_price()
+        // For some reason MIRAI crashes with this code
+        /*let avg_price = Self::average_price()
             .map(|price| if &price > new_price { price - new_price } else { new_price - price })
             .unwrap_or(0);*/
         let avg_price = 0;
@@ -761,6 +766,6 @@ impl<T: Config> Pallet<T> {
             // producer), since for instance in some schemes others may copy your solution and
             // claim a reward.
             .propagate(true)
-            .build()
+            .build()        
     }
 }
