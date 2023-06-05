@@ -29,21 +29,6 @@ jobs:
           CARGO_INCREMENTAL: 0
           RUSTFLAGS: "-Zprofile -Ccodegen-units=1 -Copt-level=0 -Clink-dead-code -Coverflow-checks=off -Zpanic_abort_tests"
 
-      - name: Setup grcov
-        run: |
-          cargo install grcov
-
-      - name: Run grcov
-        run: |
-          zip -0 cov.zip $(find . -name "mirai*.gc*" -print)
-          grcov cov.zip -s . -t lcov --llvm --ignore-not-existing --ignore "/*" -o lcov.info
-
-      - name: Upload coverage data to codecov.io
-        uses: codecov/codecov-action@v3
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: "lcov.info"
-
   mirai_on_mirai_macos:
     runs-on: macos-latest
 
