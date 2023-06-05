@@ -20,9 +20,9 @@ For each vulnerability class, we implemented prototype code to show, how the vul
 * [TODO: Unsigned Transactions](offchain-worker/README.md)
 
 ### Findings
-The research showed two main problems, when implementing a tag-analysis with MIRAI on substrate pallets:
+The research showed two main problems:
 1. **Complexity due to substrate macros** Ideally SARP only analyzes the newly written code of a pallet. To write a pallet one has to add several macros, which add a lot of complexity to the code in the background. Running a MIRAI analysis on a pallet, includes an analyzis on the macro code. This results in timeouts and reduces the certainty on issues found.
 2. **Invasiveness of tag analysis** The code we wrote in our PoC is very invasive and changes the code of the pallet. This is not practical for end-users. Ideally the user doesn't need to change anything on their code, or at least the changes should be very simple.
 
 ### Next Steps
-Before starting an implementation, a detailed software design should be worked out, addressing the issues from our findings.
+The issue above can both be addressed by working on the software design of our solution. Therefore this will be our next step, before starting an implementation.
