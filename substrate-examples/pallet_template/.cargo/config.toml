@@ -1,0 +1,5 @@
+[env]
+MIRAI_FLAGS = { value = "--diag=paranoid --single_func=pallet_template.mirai.mirai_check.code_to_analyze"}
+#MIRAI_FLAGS = { value = "--diag=paranoid --single_func=pallet_template.mirai.mirai_check.code_to_analyze", force = true }
+#MIRAI_FLAGS = { value = "--diag=paranoid", force = true }
+#MIRAI_LOG = { value = "debug", force = true }
