@@ -351,14 +351,14 @@ pub mod pallet {
                 let res = Self::validate_transaction_parameters(&payload.block_number, &payload.price);
                 // Properly check that the transaction is valid before applying the data
                 if res.is_ok() {
-                    Self::apply_data(&payload.block_number, &payload.price);
+                    Self::transform_data(&payload.block_number, &payload.price);
                 }
                 
                 res
             } else if let Call::submit_price_unsigned { block_number, price: new_price } = call {
                 let res = Self::validate_transaction_parameters(block_number, new_price);
                 // Applying the data without properly checking that the parameters were validated correctly
-                Self::apply_data(block_number, new_price);
+                Self::transform_data(block_number, new_price);
                 res
             } else {
                 InvalidTransaction::Call.into()
@@ -710,7 +710,7 @@ impl<T: Config> Pallet<T> {
     // Make sure that the parameters were verified before we apply the data
     #[requires(has_tag!(new_price, ParameterVerified))]
     #[requires(has_tag!(block_number, ParameterVerified))]
-    fn apply_data(
+    fn transform_data(
         block_number: &T::BlockNumber,
         new_price: &u32,
     ) {
