@@ -353,7 +353,6 @@ pub mod pallet {
                 if res.is_ok() {
                     Self::transform_data(&payload.block_number, &payload.price);
                 }
-                
                 res
             } else if let Call::submit_price_unsigned { block_number, price: new_price } = call {
                 let res = Self::validate_transaction_parameters(block_number, new_price);
