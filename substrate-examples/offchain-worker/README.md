@@ -11,7 +11,7 @@ To run the analysis [install mirai](https://github.com/facebookexperimental/MIRA
 from within this folder. The [config.toml](.cargo/config.toml) makes sure, that the analysis only runs on the function [`mirai_check.code_to_analyze`](src/mirai.rs).
 
 # Tag Analysis
-We use [tag analysis](https://github.com/facebookexperimental/MIRAI/blob/main/documentation/TagAnalysis.md) from MIRAI. In this example, we want to verify that all parameters are properly verified before we call `transform_data`. The tags are set in `validate_transaction_parameters` once the parameters pass the validation:
+We use [tag analysis](https://github.com/facebookexperimental/MIRAI/blob/main/documentation/TagAnalysis.md) from MIRAI. In this example, we want to verify that all parameters are properly verified before we call `transform_data`. The tags are set in `validate_transaction_parameters` once the parameters pass the validation checks:
 ``` rust
     let current_block = <system::Pallet<T>>::block_number();
     if &current_block < block_number {
@@ -41,6 +41,7 @@ The `transform_data` function is currently not doing anything but it requires th
 
 ## Output
 
+There are two calls to `validate_transaction_parameters` in `validate_unsigned`. 
 In one case `transform_data` is called without considering the return value of `validate_transaction_parameters` and because of that MIRAI is raising an issue about an unsatisfied precondition:
 ``` rust
     let res = Self::validate_transaction_parameters(block_number, new_price);
@@ -49,6 +50,7 @@ In one case `transform_data` is called without considering the return value of `
 ```
 In the other use case the return type is considered and therefore there are no warnings:
 ``` rust
+    let res = Self::validate_transaction_parameters(&payload.block_number, &payload.price);
     // Properly check that the transaction is valid before applying the data
     if res.is_ok() {
         Self::transform_data(&payload.block_number, &payload.price);
@@ -56,9 +58,9 @@ In the other use case the return type is considered and therefore there are no w
 ```
 
 
-There is a warning, when the tag is not added:
+This is the warning when the result type is not considered:
 
-![Output_Unsatisfied_Precondition](UnsatisfiedPrecondition.png)
+![MIRAI_WARNING](mirai-warning.png)
 
 
 ## Open issues
