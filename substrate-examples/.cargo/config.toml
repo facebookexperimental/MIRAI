@@ -1,4 +1,0 @@
-[env]
-MIRAI_FLAGS = { value = "--diag=paranoid --single_func=pallet_example_offchain_worker.mirai.mirai_check_that_fails.test_failure"}
-#MIRAI_FLAGS = { value = "--diag=paranoid", force = true }
-#MIRAI_LOG = { value = "debug", force = true }

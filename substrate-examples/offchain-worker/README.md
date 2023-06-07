@@ -1,6 +1,6 @@
-# Proof of Concept: Tag Analysis on Origin
+# Proof of Concept: Tag Analysis for validation of unsigned transactions
 
-This is a copy of [substrate's pallet template](https://github.com/substrate-developer-hub/substrate-node-template/tree/e0c480c0f322d0b0d1b310c93fa646fc0cfdd2df/pallets/template), enriched with a MIRAI [tag-analysis](https://github.com/facebookexperimental/MIRAI/blob/main/documentation/TagAnalysis.md). It is a first proof-of-concept for a [validation of unsigned transactions](https://github.com/bhargavbh/MIRAI/blob/main/substrate_examples/unsigned-transaction/description.md).
+This is a copy of [substrate's pallet template](https://github.com/paritytech/substrate/tree/ea9ce4c0af36310c0b0db264ab12cf4766b83750/frame/examples/offchain-worker), enriched with a MIRAI [tag-analysis](https://github.com/facebookexperimental/MIRAI/blob/main/documentation/TagAnalysis.md). It is a first proof-of-concept for [validation of unsigned transactions](https://github.com/bhargavbh/MIRAI/blob/main/substrate_examples/unsigned-transaction/description.md).
 
 # Running
 
@@ -11,7 +11,7 @@ To run the analysis [install mirai](https://github.com/facebookexperimental/MIRA
 from within this folder. The [config.toml](.cargo/config.toml) makes sure, that the analysis only runs on the function [`mirai_check.code_to_analyze`](src/mirai.rs).
 
 # Tag Analysis
-We use [tag analysis](https://github.com/facebookexperimental/MIRAI/blob/main/documentation/TagAnalysis.md) from MIRAI. In this example, we want to verify that all parameters are properly verified before we call `transform_data`. The tags are set in `validate_transaction_parameters` once the parameters pass the validation checks:
+We use [tag analysis](https://github.com/facebookexperimental/MIRAI/blob/main/documentation/TagAnalysis.md) from MIRAI. In this example, we want to verify that all parameters are properly verified before we call `check_data`. The tags are set in `validate_transaction_parameters` once the parameters pass the validation checks:
 ``` rust
     let current_block = <system::Pallet<T>>::block_number();
     if &current_block < block_number {
@@ -26,12 +26,12 @@ We use [tag analysis](https://github.com/facebookexperimental/MIRAI/blob/main/do
     add_tag!(new_price, ParameterVerified);
 ```
 
-The `transform_data` function is currently not doing anything but it requires that the two parameters have the `ParameterVerified` tag:
+The `check_data` function is currently not doing anything but it requires that the two parameters have the `ParameterVerified` tag:
 
 ``` rust
     #[requires(has_tag!(new_price, ParameterVerified))]
     #[requires(has_tag!(block_number, ParameterVerified))]
-    fn transform_data(
+    fn check_data(
         block_number: &T::BlockNumber,
         new_price: &u32,
     ) {
@@ -42,18 +42,18 @@ The `transform_data` function is currently not doing anything but it requires th
 ## Output
 
 There are two calls to `validate_transaction_parameters` in `validate_unsigned`. 
-In one case `transform_data` is called without considering the return value of `validate_transaction_parameters` and because of that MIRAI is raising an issue about an unsatisfied precondition:
+In one case `check_data` is called without considering the return value of `validate_transaction_parameters` and because of that MIRAI is raising an issue about an unsatisfied precondition:
 ``` rust
     let res = Self::validate_transaction_parameters(block_number, new_price);
     // Applying the data without properly checking that the parameters were validated correctly
-    Self::transform_data(block_number, new_price);
+    Self::check_data(block_number, new_price);
 ```
 In the other use case the return type is considered and therefore there are no warnings:
 ``` rust
     let res = Self::validate_transaction_parameters(&payload.block_number, &payload.price);
     // Properly check that the transaction is valid before applying the data
     if res.is_ok() {
-        Self::transform_data(&payload.block_number, &payload.price);
+        Self::check_data(&payload.block_number, &payload.price);
     }
 ```
 
@@ -68,3 +68,4 @@ This is the warning when the result type is not considered:
 - One specific piece of code lead to a crash in MIRAI
 - For more complex scenarios timeouts arise within MIRAI. In some cases increasing the `body_analysis_timeout` parameter leads to crashes in MIRAI.
 - There are a variety of other warnings raised from code in other crates. This is confusing to the user.
+- We also tried to add the tag directly on the `submit_price_unsigned` function as this would be closer to a real world use-case but we did not manage to get this to work correctly. We believe this is due to timeouts that MIRAI ran into (see issue above) but further investigation would be needed to verify this is indeed the problem.
