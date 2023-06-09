@@ -348,16 +348,13 @@ pub mod pallet {
                 if !signature_valid {
                     return InvalidTransaction::BadProof.into()
                 }
-                let res = Self::validate_transaction_parameters(&payload.block_number, &payload.price);
-                // Properly check that the transaction is valid before applying the data
-                if res.is_ok() {
-                    Self::check_data(&payload.block_number, &payload.price);
-                }
-                res
+                Self::validate_transaction_parameters(&payload.block_number, &payload.price)
             } else if let Call::submit_price_unsigned { block_number, price: new_price } = call {
                 let res = Self::validate_transaction_parameters(block_number, new_price);
-                // Applying the data without properly checking that the parameters were validated correctly
+                // uncomment the if-statement to get no warning
+                //if res.is_ok() {
                 Self::check_data(block_number, new_price);
+                //}
                 res
             } else {
                 InvalidTransaction::Call.into()

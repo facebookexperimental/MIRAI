@@ -41,26 +41,31 @@ The `check_data` function is currently not doing anything but it requires that t
 
 ## Output
 
-There are two calls to `validate_transaction_parameters` in `validate_unsigned`. 
-In one case `check_data` is called without considering the return value of `validate_transaction_parameters` and because of that MIRAI is raising an issue about an unsatisfied precondition:
+When we run ``cargo mirai``, ``check_data`` in line 356
+
 ``` rust
-    let res = Self::validate_transaction_parameters(block_number, new_price);
-    // Applying the data without properly checking that the parameters were validated correctly
-    Self::check_data(block_number, new_price);
-```
-In the other use case the return type is considered and therefore there are no warnings:
-``` rust
-    let res = Self::validate_transaction_parameters(&payload.block_number, &payload.price);
-    // Properly check that the transaction is valid before applying the data
-    if res.is_ok() {
-        Self::check_data(&payload.block_number, &payload.price);
-    }
+let res = Self::validate_transaction_parameters(block_number, new_price);
+// uncomment the if-statement to get no warning
+//if res.is_ok() {
+Self::check_data(block_number, new_price);
+//}
 ```
 
-
-This is the warning when the result type is not considered:
+results in a warning:
 
 ![MIRAI_WARNING](mirai-warning.png)
+
+When we do the check only when the transaction is valid
+
+``` rust
+let res = Self::validate_transaction_parameters(block_number, new_price);
+// uncomment the if-statement to get no warning
+if res.is_ok() {
+    Self::check_data(block_number, new_price);
+}
+```
+the warning is not generated.
+
 
 
 ## Open issues
