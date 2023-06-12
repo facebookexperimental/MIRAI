@@ -55,7 +55,7 @@ results in a warning:
 
 ![MIRAI_WARNING](mirai-warning.png)
 
-When we do the check only when the transaction is valid
+When we call `check_data` only if the transaction is valid
 
 ``` rust
 let res = Self::validate_transaction_parameters(block_number, new_price);
@@ -74,3 +74,7 @@ the warning is not generated.
 - For more complex scenarios timeouts arise within MIRAI. In some cases increasing the `body_analysis_timeout` parameter leads to crashes in MIRAI.
 - There are a variety of other warnings raised from code in other crates. This is confusing to the user.
 - We also tried to do the tag check directly on the `submit_price_unsigned` function as this would be closer to a real world use-case but we did not manage to get this to work correctly. We believe this is due to timeouts that MIRAI ran into (see issue above) but further investigation would be needed to verify this is indeed the problem.
+- In the debug log of MIRAI there are multiple log messages regarding a bug:
+```
+[0u]: &("internal error: entered unreachable code: /!\\ `LevelFilter` representation seems to have changed! /!\\ \nThis is a bug (and it's pretty bad). Please contact the `tracing` maintainers. Thank you and I'm sorry.\n The offending repr was: ")
+```
