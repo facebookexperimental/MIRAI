@@ -20,9 +20,12 @@ For each vulnerability class, we implemented prototype code to show, how the vul
 * [TODO: Unsigned Transactions](offchain-worker/README.md)
 
 ### Findings
-The research showed two main problems:
-1. **Complexity due to substrate macros** Ideally SARP only analyzes the newly written code of a pallet. To write a pallet one has to add several macros, which add a lot of complexity to the code in the background. Running a MIRAI analysis on a pallet, includes an analyzis on the macro code. This results in timeouts and reduces the certainty on issues found.
-2. **Invasiveness of tag analysis** The code we wrote in our PoC is very invasive and changes the code of the pallet. This is not practical for end-users. Ideally the user doesn't need to change anything on their code, or at least the changes should be very simple.
+The research showed three main problems:
+1. **Crashes and timeouts of MIRAI** Certain pieces of substrate code lead to crashes of MIRAI. In other cases, parts of the code are not analyzed/do not produce warnings, because MIRAI runs into a timeout before reaching this code. Because of this, our examples are rather simple and we couldn't add and check tags at the locations we originally wanted to.
+2. **Complexity due to substrate macros** The main reason for crashes and timeouts in our examples, was caused by substrate macros, adding a lot of complexity to the code in the background. Ideally SARP only analyzes the newly written code of a pallet.
+4. **Invasiveness of tag analysis** The code we wrote in our PoC is very invasive and changes the code of the pallet. This is not practical for end-users. Ideally the user doesn't need to change anything on their code, or at least the changes should be very simple.
 
 ### Next Steps
-The issue above can both be addressed by working on the software design of our solution. Therefore this will be our next step, before starting an implementation.
+We see two main tasks as next steps:
+1. Analyze timeouts and crashes in MIRAI. Possibly they can be resolved by bugfixes in MIRAI. If not, we need to find workarounds.
+2. Work out a minimal invasive software design to implement a tag analysis.
