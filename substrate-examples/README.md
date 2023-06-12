@@ -17,7 +17,7 @@ As a first step we analyzed the feasibility for using MIRAI to implement a stati
 ### Implementation
 For each vulnerability class, we implemented prototype code to show, how the vulnerability can be detected:
 * [Incorrect Origin](pallet_template/README.md)
-* [TODO: Unsigned Transactions](offchain-worker/README.md)
+* [Unsigned Transactions](offchain-worker/README.md)
 
 ### Findings
 The research showed three main problems:
