@@ -4,11 +4,10 @@ This is a copy of [substrate's pallet template](https://github.com/substrate-dev
 
 # Running
 
-To run the analysis [install mirai](https://github.com/facebookexperimental/MIRAI/blob/main/documentation/InstallationGuide.md) and run
-
-`cargo mirai`
-
-from within this folder. The [config.toml](.cargo/config.toml) makes sure, that the analysis only runs on the function [`mirai_check.code_to_analyze`](src/mirai.rs).
+1. Clone this repo with `git clone https://github.com/scs/MIRAI.git`
+2. Checkout this branch: `git checkout Milestone1_Research`
+3. [Install MIRAI](https://github.com/facebookexperimental/MIRAI/blob/main/documentation/InstallationGuide.md)
+4. Run the analysis with `cargo mirai`from within this folder. The [config.toml](.cargo/config.toml) makes sure, that the analysis only runs on the function [`mirai_check.code_to_analyze`](src/mirai.rs).
 
 # Tag Analysis
 We use [tag analysis](https://github.com/facebookexperimental/MIRAI/blob/main/documentation/TagAnalysis.md) from MIRAI. In this example, we want to verify that `ensure_signed` is called on the `origin`, before the storage is set. We implemented two wrapper functions to accomplish this:
