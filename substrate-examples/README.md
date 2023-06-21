@@ -25,7 +25,8 @@ The research showed three main problems:
 2. **Complexity due to substrate macros** The main reason for crashes and timeouts in our examples, was caused by substrate macros, adding a lot of complexity to the code in the background. Ideally SARP only analyzes the newly written code of a pallet.
 4. **Invasiveness of tag analysis** The code we wrote in our PoC is very invasive and changes the code of the pallet. This is not practical for end-users. Ideally the user doesn't need to change anything on their code, or at least the changes should be very simple.
 
-### Next Steps
-We see two main tasks as next steps:
-1. Analyze timeouts and crashes in MIRAI. Possibly they can be resolved by bugfixes in MIRAI. If not, we need to find workarounds.
-2. Work out a minimal invasive software design to implement a tag analysis.
+
+### Feasibility of Approach
+With this first research project we could not completely determine the feasibility of the approach. To our current knowledge, the following points must be analyzed first:
+1. Running the analysis only on the newly written pallet code - without the substrate macros. This should significantly reduce the complexity of the analysis. It should be possible to achieve this, by working out a software design, that separates the two.
+2. It is currently unclear if all failures we observed result from the complexity of the code or from bugs within MIRAI. This needs further analysis.
