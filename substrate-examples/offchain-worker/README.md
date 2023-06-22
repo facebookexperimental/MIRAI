@@ -72,9 +72,12 @@ the warning is not generated.
 > When reproducing the examples, make sure to run `cargo clean` after changing the [.cargo/config.toml](.cargo/config.toml).
 
 - One specific piece of code leads (see line 745 in `src/lib.rs`) to a crash in MIRAI. This happens only on the `devvirtualbox` test machine and could not be reproduced on the second system.
-  - `process didn't exit successfully: [...] (exit status: 255)`
+![MIRAI_CRASH_CODE](mirai-crash-code.png)
+
 - For more complex scenarios timeouts arise within MIRAI. 
+  - For example with an empty `config.toml` file. See the `README.md` of `pallet_template` regarding this.
   - Increasing the `body_analysis_timeout` parameter lead to crashes in some cases in MIRAI on the `devvirtualbox` test machine.
+
 - There are a variety of other warnings raised from code in other crates. This is confusing for the user. For example:
 ```
 warning: possible incomplete analysis of call because of a nested call to a function without a MIR body
@@ -86,7 +89,20 @@ warning: possible incomplete analysis of call because of a nested call to a func
 note: related location
 ...
 ```
-- We also tried to do the tag check directly on the `submit_price_unsigned` function as this would be closer to a real world use-case but we did not manage to get this to work correctly. We believe this is due to timeouts that MIRAI ran into (see issue above) but further investigation would be needed to verify this is indeed the problem.
+
+- There are warnings regarding missing MIR bodys. This can be seen like this:
+Enable the second line and diable the first in [.cargo/config.toml](.cargo/config.toml) to:
+  ``` toml
+  [env]
+  #MIRAI_FLAGS = { value = "--diag=paranoid --single_func=pallet_example_offchain_worker.mirai.mirai_check.code_to_analyze"}
+  MIRAI_FLAGS = { value = "--diag=paranoid --single_func=pallet_example_offchain_worker.mirai.mirai_check.submit_unsigned_transaction"}
+  MIRAI_LOG = { value = "info", force = true }
+  ```
+  Then warnings like this are generated:
+  ![MISSING_MIR_BODY](missing-mir-body.png)
+
+- We also tried to do the tag check directly on the `submit_price_unsigned` function as this would be closer to a real world use-case but we did not manage to get this to work correctly. We believe this is related to the timeout and missing MIR body warnings that MIRAI observed (see issues above) but further investigation would be needed to verify this is indeed the problem.
+
 - In the debug log of MIRAI there are multiple log messages regarding a bug:
 ```
 [0u]: &("internal error: entered unreachable code: /!\\ `LevelFilter` representation seems to have changed! /!\\ \nThis is a bug (and it's pretty bad). Please contact the `tracing` maintainers. Thank you and I'm sorry.\n The offending repr was: ")

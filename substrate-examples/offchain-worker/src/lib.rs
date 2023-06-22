@@ -279,6 +279,8 @@ pub mod pallet {
         /// purpose is to showcase offchain worker capabilities.
         #[pallet::call_index(1)]
         #[pallet::weight({0})]
+        #[requires(has_tag!(&_block_number, ParameterVerified))]
+        #[requires(has_tag!(&price, ParameterVerified))]
         pub fn submit_price_unsigned(
             origin: OriginFor<T>,
             _block_number: T::BlockNumber,

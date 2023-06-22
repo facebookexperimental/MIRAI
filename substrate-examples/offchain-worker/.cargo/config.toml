@@ -1,4 +1,4 @@
 [env]
 MIRAI_FLAGS = { value = "--diag=paranoid --single_func=pallet_example_offchain_worker.mirai.mirai_check.code_to_analyze"}
-#MIRAI_FLAGS = { value = "--diag=paranoid", force = true }
-#MIRAI_LOG = { value = "debug", force = true }
+#MIRAI_FLAGS = { value = "--diag=paranoid --single_func=pallet_example_offchain_worker.mirai.mirai_check.submit_unsigned_transaction"}
+MIRAI_LOG = { value = "info", force = true }
