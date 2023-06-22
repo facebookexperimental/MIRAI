@@ -22,7 +22,7 @@ For each vulnerability class, we implemented prototype code to show, how the vul
 #### Test machines
 The code was tested on two different machines. We list them here because they do not always show the same behaviour during our tests. We assume this is mostly due to their performance capabilities and available memory.
 
-devsgx02:
+`devsgx02`:
 ```
 OS: Ubuntu 20.04.3 LTS x86_64
 Host: PowerEdge R340
@@ -32,7 +32,7 @@ GPU: 04:00.0 Matrox Electronics Systems Ltd. Integrated Matrox G200eW3 Graphics 
 Memory: 2527MiB / 31699MiB
 ```
 
-devvirtualbox:
+`devvirtualbox`:
 ```
 OS: Ubuntu 22.04.2 LTS x86_64 
 Host: VirtualBox 1.2 

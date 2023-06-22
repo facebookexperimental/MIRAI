@@ -69,9 +69,23 @@ the warning is not generated.
 
 ## Open issues
 
-- One specific piece of code lead to a crash in MIRAI
-- For more complex scenarios timeouts arise within MIRAI. In some cases increasing the `body_analysis_timeout` parameter leads to crashes in MIRAI.
-- There are a variety of other warnings raised from code in other crates. This is confusing to the user.
+> When reproducing the examples, make sure to run `cargo clean` after changing the [.cargo/config.toml](.cargo/config.toml).
+
+- One specific piece of code leads (see line 745 in `src/lib.rs`) to a crash in MIRAI. This happens only on the `devvirtualbox` test machine and could not be reproduced on the second system.
+  - `process didn't exit successfully: [...] (exit status: 255)`
+- For more complex scenarios timeouts arise within MIRAI. 
+  - Increasing the `body_analysis_timeout` parameter lead to crashes in some cases in MIRAI on the `devvirtualbox` test machine.
+- There are a variety of other warnings raised from code in other crates. This is confusing for the user. For example:
+```
+warning: possible incomplete analysis of call because of a nested call to a function without a MIR body
+   --> /home/tniederberger/.cargo/registry/src/index.crates.io-6f17d22bba15001f/tracing-core-0.1.31/src/dispatcher.rs:402:29
+    |
+402 |         .unwrap_or_else(|_| f(&NONE))
+    |                             ^^^^^^^^
+    |
+note: related location
+...
+```
 - We also tried to do the tag check directly on the `submit_price_unsigned` function as this would be closer to a real world use-case but we did not manage to get this to work correctly. We believe this is due to timeouts that MIRAI ran into (see issue above) but further investigation would be needed to verify this is indeed the problem.
 - In the debug log of MIRAI there are multiple log messages regarding a bug:
 ```
