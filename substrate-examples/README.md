@@ -19,6 +19,29 @@ For each vulnerability class, we implemented prototype code to show, how the vul
 * [Incorrect Origin](pallet_template/README.md)
 * [Unsigned Transactions](offchain-worker/README.md)
 
+#### Test machines
+The code was tested on two different machines. We list them here because they do not always show the same behaviour during our tests. We assume this is mostly due to their performance capabilities and available memory.
+
+devsgx02:
+```
+OS: Ubuntu 20.04.3 LTS x86_64
+Host: PowerEdge R340
+Kernel: 5.4.0-148-generic
+CPU: Intel Xeon E-2176G (12) @ 3.700GHz
+GPU: 04:00.0 Matrox Electronics Systems Ltd. Integrated Matrox G200eW3 Graphics Controller
+Memory: 2527MiB / 31699MiB
+```
+
+devvirtualbox:
+```
+OS: Ubuntu 22.04.2 LTS x86_64 
+Host: VirtualBox 1.2 
+Kernel: 5.19.0-45-generic 
+CPU: 11th Gen Intel i7-1165G7 (4) @ 2.803GHz 
+GPU: 00:02.0 VMware SVGA II Adapter 
+Memory: 3743MiB / 11956MiB 
+```
+
 ### Findings
 The research showed three main problems:
 1. **Crashes and timeouts of MIRAI** Certain pieces of substrate code lead to crashes of MIRAI. In other cases, parts of the code are not analyzed/do not produce warnings, because MIRAI runs into a timeout before reaching this code. Because of this, our examples are rather simple and we couldn't add and check tags at the locations we originally wanted to.
