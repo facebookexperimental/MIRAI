@@ -104,6 +104,13 @@ Enable the second line and diable the first in [.cargo/config.toml](.cargo/confi
 - We also tried to do the tag check directly on the `submit_price_unsigned` function as this would be closer to a real world use-case but we did not manage to get this to work correctly. We believe this is related to the timeout and missing MIR body warnings that MIRAI observed (see issues above) but further investigation would be needed to verify this is indeed the problem.
 
 - In the debug log of MIRAI there are multiple log messages regarding a bug:
-```
-[0u]: &("internal error: entered unreachable code: /!\\ `LevelFilter` representation seems to have changed! /!\\ \nThis is a bug (and it's pretty bad). Please contact the `tracing` maintainers. Thank you and I'm sorry.\n The offending repr was: ")
-```
+  ```
+  [0u]: &("internal error: entered unreachable code: /!\\ `LevelFilter` representation seems to have changed! /!\\ \nThis is a bug (and it's pretty bad). Please contact the `tracing` maintainers. Thank you and I'm sorry.\n The offending repr was: ")
+  ```
+  This can be seen by setting the log level in MIRAI to `debug` in the `config.toml`
+  ``` toml
+  [env]
+  #MIRAI_FLAGS = { value = "--diag=paranoid --single_func=pallet_example_offchain_worker.mirai.mirai_check.code_to_analyze"}
+  MIRAI_FLAGS = { value = "--diag=paranoid --single_func=pallet_example_offchain_worker.mirai.mirai_check.submit_unsigned_transaction"}
+  MIRAI_LOG = { value = "debug", force = true }
+  ```
