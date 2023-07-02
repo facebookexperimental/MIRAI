@@ -22,6 +22,12 @@ Then build and install MIRAI into cargo:
 cargo install --locked --path ./checker
 ```
 
+If a build error occurs, you need to execute the folloing command to install dependencies.
+
+```bash
+sudo apt install cmake clang libclang-dev
+```
+
 ## Contributing to MIRAI
 
 If you want to help develop MIRAI see
