@@ -55,7 +55,7 @@ fn main() {
             arg.into_string().unwrap_or_else(|arg| {
                 early_error(
                     ErrorOutputType::default(),
-                    &format!("Argument {i} is not valid Unicode: {arg:?}"),
+                    format!("Argument {i} is not valid Unicode: {arg:?}"),
                 )
             })
         })

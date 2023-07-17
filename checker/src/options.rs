@@ -110,7 +110,7 @@ impl Options {
             &shellwords::split(s).unwrap_or_else(|e| {
                 early_error(
                     ErrorOutputType::default(),
-                    &format!("Cannot parse argument string: {e:?}"),
+                    format!("Cannot parse argument string: {e:?}"),
                 )
             }),
             running_test_harness,
