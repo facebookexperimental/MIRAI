@@ -942,7 +942,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                             .bv
                             .cv
                             .session
-                            .struct_span_warn(span, msg.as_ref());
+                            .struct_span_warn(span, msg.to_string());
                         self.block_visitor.bv.emit_diagnostic(warning);
                     } else {
                         // If we see an unconditional panic inside a standard contract summary,
@@ -967,7 +967,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                                 .bv
                                 .cv
                                 .session
-                                .struct_span_warn(span, msg.as_str());
+                                .struct_span_warn(span, msg.to_string());
                             self.block_visitor.bv.emit_diagnostic(warning);
                         }
                         return;
@@ -1015,7 +1015,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                                 .bv
                                 .cv
                                 .session
-                                .struct_span_warn(span, msg.as_ref());
+                                .struct_span_warn(span, msg.to_string());
                             self.block_visitor.bv.emit_diagnostic(warning);
                         } else {
                             // Since the assertion occurs in code that is being used rather than
@@ -1090,7 +1090,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                             _ => {
                                 let warning = self.block_visitor.bv.cv.session.struct_span_warn(
                                     self.block_visitor.bv.current_span,
-                                    warning.as_ref(),
+                                    warning.to_string(),
                                 );
                                 self.block_visitor.bv.emit_diagnostic(warning);
                             }
@@ -1505,7 +1505,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                     format!(
                         "the macro {} expects its first argument to be a reference to a non-reference value",
                         if checking_presence { "has_tag! " } else { "does_not_have_tag!" },
-                    ).as_str(),
+                    ),
                 );
                 self.block_visitor.bv.emit_diagnostic(warning);
             }

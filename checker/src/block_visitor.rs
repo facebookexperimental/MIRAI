@@ -299,7 +299,8 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 place,
                 target,
                 unwind,
-            } => self.visit_drop(place, *target, *unwind),
+                replace,
+            } => self.visit_drop(place, *target, *unwind, *replace),
             mir::TerminatorKind::Call {
                 func,
                 args,
@@ -369,8 +370,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                                 span,
                                 format!(
                                     "unknown tag type for constant-time verification: {tag_name}",
-                                )
-                                .as_str(),
+                                ),
                             );
                             self.bv.emit_diagnostic(warning);
                         }
@@ -477,6 +477,10 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         place: &mir::Place<'tcx>,
         target: mir::BasicBlock,
         unwind: mir::UnwindAction,
+        /// The `replace` flag indicates whether this terminator was created as part of an assignment.
+        /// This should only be used for diagnostic purposes, and does not have any operational
+        /// meaning.
+        _replace: bool,
     ) {
         let place_path = self.get_path_for_place(place);
         let path = place_path.canonicalize(&self.bv.current_environment);
@@ -1158,7 +1162,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             .bv
             .cv
             .session
-            .struct_span_warn(span, diagnostic.as_ref());
+            .struct_span_warn(span, diagnostic.as_ref().to_string());
         for pc_span in precondition.spans.iter() {
             let snippet = self.bv.tcx.sess.source_map().span_to_snippet(*pc_span);
             if snippet.is_ok() {
@@ -1317,7 +1321,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 )
             {
                 let span = self.bv.current_span.source_callsite();
-                let warning = self.bv.cv.session.struct_span_warn(span, warning.as_str());
+                let warning = self.bv.cv.session.struct_span_warn(span, warning.clone());
                 self.bv.emit_diagnostic(warning);
             }
         }
@@ -1405,10 +1409,9 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                                 value_name,
                                 if checking_presence { "may not" } else { "may" },
                                 tag_name
-                            )
-                            .as_str(),
+                            ),
                         );
-                        self.bv.emit_diagnostic(warning);
+                        self.bv.emit_diagnostic(warning.clone());
                     } else if promotable_entry_condition.is_none()
                         || tag_check.extract_promotable_disjuncts(false).is_none()
                     {
@@ -1419,10 +1422,9 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                                 "the {value_name} may have a {tag_name} tag, \
                                 and the tag check cannot be promoted as a precondition, \
                                 because it contains local variables",
-                            )
-                            .as_str(),
+                            ),
                         );
-                        self.bv.emit_diagnostic(warning);
+                        self.bv.emit_diagnostic(warning.clone());
                     }
                 }
 
@@ -1430,10 +1432,11 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     // The existence of the tag on the value is different from the expectation.
                     // In this case, report an error.
                     let span = self.bv.current_span.source_callsite();
-                    let warning = self.bv.cv.session.struct_span_warn(
-                        span,
-                        format!("the {value_name} has a {tag_name} tag").as_str(),
-                    );
+                    let warning = self
+                        .bv
+                        .cv
+                        .session
+                        .struct_span_warn(span, format!("the {value_name} has a {tag_name} tag"));
                     self.bv.emit_diagnostic(warning);
                 }
 
@@ -1539,7 +1542,8 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         if entry_cond_as_bool.unwrap_or(false) {
                             let error = get_assert_msg_description(msg);
                             let span = self.bv.current_span;
-                            let warning = self.bv.cv.session.struct_span_warn(span, error);
+                            let warning =
+                                self.bv.cv.session.struct_span_warn(span, error.to_string());
                             self.bv.emit_diagnostic(warning);
                             // No need to push a precondition, the caller can never satisfy it.
                             return;
@@ -1573,7 +1577,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         // Can't make this the caller's problem.
                         let warning = format!("possible {}", get_assert_msg_description(msg));
                         let span = self.bv.current_span;
-                        let warning = self.bv.cv.session.struct_span_warn(span, warning.as_str());
+                        let warning = self.bv.cv.session.struct_span_warn(span, warning);
                         self.bv.emit_diagnostic(warning);
                         return;
                     }

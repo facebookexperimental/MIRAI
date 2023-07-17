@@ -64,7 +64,7 @@ impl<'fixed, 'analysis, 'compilation, 'tcx>
             bv: body_visitor,
             block_indices,
             loop_anchors,
-            dominators,
+            dominators: dominators.clone(),
             in_state,
             out_state,
             terminator_state,
