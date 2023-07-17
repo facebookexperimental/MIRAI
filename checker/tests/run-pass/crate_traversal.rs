@@ -92,6 +92,7 @@ fn bar() -> bool {
     f(&1, &-1)
 }
 
+#[allow(drop_ref)]
 fn test7() {
     loop {
         let beacon = {
