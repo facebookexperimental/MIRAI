@@ -182,6 +182,7 @@ pub const TAG_PROPAGATION_ALL: TagPropagationSet = tag_propagation_set!(
     TagPropagation::SubComponent,
     TagPropagation::SubOverflows,
     TagPropagation::SuperComponent,
+    TagPropagation::Transmute,
     TagPropagation::UninterpretedCall
 );
 
