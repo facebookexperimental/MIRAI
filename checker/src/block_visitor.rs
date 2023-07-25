@@ -477,9 +477,9 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         place: &mir::Place<'tcx>,
         target: mir::BasicBlock,
         unwind: mir::UnwindAction,
-        /// The `replace` flag indicates whether this terminator was created as part of an assignment.
-        /// This should only be used for diagnostic purposes, and does not have any operational
-        /// meaning.
+        // The `replace` flag indicates whether this terminator was created as part of an assignment.
+        // This should only be used for diagnostic purposes, and does not have any operational
+        // meaning.
         _replace: bool,
     ) {
         let place_path = self.get_path_for_place(place);
