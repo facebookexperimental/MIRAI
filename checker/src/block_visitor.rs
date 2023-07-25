@@ -2252,6 +2252,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         let right = self.visit_operand(right_operand);
         let mut result = match bin_op {
             mir::BinOp::Add => left.addition(right),
+            mir::BinOp::AddUnchecked => left.addition(right),
             mir::BinOp::BitAnd => left.bit_and(right),
             mir::BinOp::BitOr => left.bit_or(right),
             mir::BinOp::BitXor => left.bit_xor(right),
@@ -2262,6 +2263,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             mir::BinOp::Le => left.less_or_equal(right),
             mir::BinOp::Lt => left.less_than(right),
             mir::BinOp::Mul => left.multiply(right),
+            mir::BinOp::MulUnchecked => left.multiply(right),
             mir::BinOp::Ne => left.not_equals(right),
             mir::BinOp::Offset => {
                 let r = left.offset(right);
@@ -2270,8 +2272,11 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             }
             mir::BinOp::Rem => left.remainder(right),
             mir::BinOp::Shl => left.shift_left(right),
+            mir::BinOp::ShlUnchecked => left.shift_left(right),
             mir::BinOp::Shr => left.shr(right),
+            mir::BinOp::ShrUnchecked => left.shr(right),
             mir::BinOp::Sub => left.subtract(right),
+            mir::BinOp::SubUnchecked => left.subtract(right),
         };
         if let Expression::BitAnd { left, right } = &result.expression {
             if right.expression.is_memory_reference() {
