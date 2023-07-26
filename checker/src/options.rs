@@ -7,8 +7,7 @@ use clap::{Arg, Command, ErrorKind};
 use itertools::Itertools;
 
 use mirai_annotations::*;
-use rustc_session::config::ErrorOutputType;
-use rustc_session::early_error;
+use rustc_session::EarlyErrorHandler;
 
 /// Creates the clap::Command metadata for argument parsing.
 fn make_options_parser<'help>(running_test_harness: bool) -> Command<'help> {
@@ -105,21 +104,29 @@ impl Options {
     /// Parse options from an argument string. The argument string will be split using unix
     /// shell escaping rules. Any content beyond the leftmost `--` token will be returned
     /// (excluding this token).
-    pub fn parse_from_str(&mut self, s: &str, running_test_harness: bool) -> Vec<String> {
+    pub fn parse_from_str(
+        &mut self,
+        s: &str,
+        handler: &EarlyErrorHandler,
+        running_test_harness: bool,
+    ) -> Vec<String> {
         self.parse(
             &shellwords::split(s).unwrap_or_else(|e| {
-                early_error(
-                    ErrorOutputType::default(),
-                    format!("Cannot parse argument string: {e:?}"),
-                )
+                handler.early_error(format!("Cannot parse argument string: {e:?}"))
             }),
+            handler,
             running_test_harness,
         )
     }
 
     /// Parses options from a list of strings. Any content beyond the leftmost `--` token
     /// will be returned (excluding this token).
-    pub fn parse(&mut self, args: &[String], running_test_harness: bool) -> Vec<String> {
+    pub fn parse(
+        &mut self,
+        args: &[String],
+        handler: &EarlyErrorHandler,
+        running_test_harness: bool,
+    ) -> Vec<String> {
         let mut mirai_args_end = args.len();
         let mut rustc_args_start = 0;
         if let Some((p, _)) = args.iter().find_position(|s| s.as_str() == "--") {
@@ -187,10 +194,7 @@ impl Options {
             self.max_analysis_time_for_body = match matches.value_of("body_analysis_timeout") {
                 Some(s) => match s.parse::<u64>() {
                     Ok(v) => v,
-                    Err(_) => early_error(
-                        ErrorOutputType::default(),
-                        "--body_analysis_timeout expects an integer",
-                    ),
+                    Err(_) => handler.early_error("--body_analysis_timeout expects an integer"),
                 },
                 None => assume_unreachable!(),
             }
@@ -199,10 +203,7 @@ impl Options {
             self.max_analysis_time_for_crate = match matches.value_of("crate_analysis_timeout") {
                 Some(s) => match s.parse::<u64>() {
                     Ok(v) => v,
-                    Err(_) => early_error(
-                        ErrorOutputType::default(),
-                        "--crate_analysis_timeout expects an integer",
-                    ),
+                    Err(_) => handler.early_error("--crate_analysis_timeout expects an integer"),
                 },
                 None => assume_unreachable!(),
             }

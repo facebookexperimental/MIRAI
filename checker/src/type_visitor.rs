@@ -42,7 +42,7 @@ impl<'tcx> Default for type_visitor::TypeCache<'tcx> {
 }
 
 impl<'tcx> TypeCache<'tcx> {
-    /// Provides a way to refer to a  rustc_middle::ty::Ty via a handle that does not have
+    /// Provides a way to refer to a rustc_middle::ty::Ty via a handle that does not have
     /// a life time specifier.
     pub fn new() -> TypeCache<'tcx> {
         TypeCache {
@@ -988,13 +988,16 @@ impl<'tcx> TypeVisitor<'tcx> {
         ty: Ty<'tcx>,
     ) -> std::result::Result<
         rustc_middle::ty::layout::TyAndLayout<'tcx>,
-        rustc_middle::ty::layout::LayoutError<'tcx>,
+        &'tcx rustc_middle::ty::layout::LayoutError<'tcx>,
     > {
         let param_env = self.get_param_env();
         if utils::is_concrete(ty.kind()) {
             self.tcx.layout_of(param_env.and(ty))
         } else {
-            Err(rustc_middle::ty::layout::LayoutError::Unknown(ty))
+            Err(&*self
+                .tcx
+                .arena
+                .alloc(rustc_middle::ty::layout::LayoutError::Unknown(ty)))
         }
     }
 

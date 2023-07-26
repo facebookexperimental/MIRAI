@@ -18,6 +18,7 @@ use log_derive::*;
 use rustc_driver::Compilation;
 use rustc_interface::{interface, Queries};
 use rustc_middle::ty::TyCtxt;
+use rustc_session::EarlyErrorHandler;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter, Result};
@@ -97,6 +98,7 @@ impl rustc_driver::Callbacks for MiraiCallbacks {
     #[logfn(TRACE)]
     fn after_analysis<'tcx>(
         &mut self,
+        _early_error_handler: &EarlyErrorHandler,
         compiler: &interface::Compiler,
         queries: &'tcx Queries<'tcx>,
     ) -> Compilation {
