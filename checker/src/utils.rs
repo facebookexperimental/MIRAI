@@ -16,8 +16,9 @@ use rustc_hir::definitions::{DefPathData, DisambiguatedDefPathData};
 use rustc_hir::Node;
 use rustc_middle::ty;
 use rustc_middle::ty::print::{FmtPrinter, Printer};
-use rustc_middle::ty::subst::{GenericArgKind, SubstsRef};
-use rustc_middle::ty::{FloatTy, IntTy, Ty, TyCtxt, TyKind, UintTy};
+use rustc_middle::ty::{
+    FloatTy, GenericArgKind, GenericArgsRef, IntTy, Ty, TyCtxt, TyKind, UintTy,
+};
 
 /// Returns the location of the rust system binaries that are associated with this build of Mirai.
 /// The location is obtained by looking at the contents of the environmental variables that were
@@ -70,10 +71,10 @@ pub fn contains_function<'tcx>(ty: Ty<'tcx>, tcx: TyCtxt<'tcx>) -> bool {
     if ty.is_fn() || ty.is_closure() || ty.is_generator() {
         return true;
     }
-    if let TyKind::Adt(def, substs) = ty.kind() {
+    if let TyKind::Adt(def, args) = ty.kind() {
         for variant in def.variants().iter() {
             for (_, field) in variant.fields.iter().enumerate() {
-                let field_ty = field.ty(tcx, substs);
+                let field_ty = field.ty(tcx, args);
                 if contains_function(field_ty, tcx) {
                     return true;
                 }
@@ -152,7 +153,7 @@ pub fn is_trait_method(def_id: DefId, tcx: TyCtxt<'_>) -> bool {
 #[logfn(TRACE)]
 pub fn argument_types_key_str<'tcx>(
     tcx: TyCtxt<'tcx>,
-    generic_args: Option<SubstsRef<'tcx>>,
+    generic_args: Option<GenericArgsRef<'tcx>>,
 ) -> Rc<str> {
     let mut result = "_".to_string();
     if let Some(generic_args) = generic_args {
@@ -211,7 +212,7 @@ fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: TyCtxt<'tcx>) 
         TyKind::Closure(def_id, subs) => {
             str.push_str("closure_");
             str.push_str(qualified_type_name(tcx, *def_id).as_str());
-            for sub in subs.as_closure().substs {
+            for sub in subs.as_closure().args {
                 if let GenericArgKind::Type(ty) = sub.unpack() {
                     str.push('_');
                     append_mangled_type(str, ty, tcx);
@@ -224,7 +225,7 @@ fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: TyCtxt<'tcx>) 
                 let principal =
                     tcx.normalize_erasing_late_bound_regions(ty::ParamEnv::reveal_all(), principal);
                 str.push_str(qualified_type_name(tcx, principal.def_id).as_str());
-                for sub in principal.substs {
+                for sub in principal.args {
                     if let GenericArgKind::Type(ty) = sub.unpack() {
                         str.push('_');
                         append_mangled_type(str, ty, tcx);
@@ -249,7 +250,7 @@ fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: TyCtxt<'tcx>) 
         TyKind::Generator(def_id, subs, ..) => {
             str.push_str("generator_");
             str.push_str(qualified_type_name(tcx, *def_id).as_str());
-            for sub in subs.as_generator().substs {
+            for sub in subs.as_generator().args {
                 if let GenericArgKind::Type(ty) = sub.unpack() {
                     str.push('_');
                     append_mangled_type(str, ty, tcx);
@@ -262,13 +263,10 @@ fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: TyCtxt<'tcx>) 
                 append_mangled_type(str, ty, tcx)
             }
         }
-        TyKind::Alias(
-            rustc_middle::ty::Opaque,
-            rustc_middle::ty::AliasTy { def_id, substs, .. },
-        ) => {
+        TyKind::Alias(rustc_middle::ty::Opaque, rustc_middle::ty::AliasTy { def_id, args, .. }) => {
             str.push_str("impl_");
             str.push_str(qualified_type_name(tcx, *def_id).as_str());
-            for sub in *substs {
+            for sub in *args {
                 if let GenericArgKind::Type(ty) = sub.unpack() {
                     str.push('_');
                     append_mangled_type(str, ty, tcx);
@@ -446,8 +444,8 @@ pub fn def_id_as_qualified_name_str(tcx: TyCtxt<'_>, def_id: DefId) -> Rc<str> {
         name.push('(');
         let fn_sig = if fn_ty.is_fn() {
             fn_ty.fn_sig(tcx).skip_binder()
-        } else if let ty::Closure(_, substs) = fn_ty.kind() {
-            substs.as_closure().sig().skip_binder()
+        } else if let ty::Closure(_, args) = fn_ty.kind() {
+            args.as_closure().sig().skip_binder()
         } else {
             unreachable!()
         };
@@ -480,7 +478,7 @@ pub fn def_id_display_name(tcx: TyCtxt<'_>, def_id: DefId) -> String {
 }
 
 /// Returns false if any of the generic arguments are themselves generic
-pub fn are_concrete(gen_args: SubstsRef<'_>) -> bool {
+pub fn are_concrete(gen_args: GenericArgsRef<'_>) -> bool {
     for gen_arg in gen_args.iter() {
         if let GenericArgKind::Type(ty) = gen_arg.unpack() {
             if !is_concrete(ty.kind()) {
@@ -498,12 +496,9 @@ pub fn is_concrete(ty: &TyKind<'_>) -> bool {
         | TyKind::Closure(_, gen_args)
         | TyKind::FnDef(_, gen_args)
         | TyKind::Generator(_, gen_args, _)
-        | TyKind::Alias(
-            _,
-            rustc_middle::ty::AliasTy {
-                substs: gen_args, ..
-            },
-        ) => are_concrete(gen_args),
+        | TyKind::Alias(_, rustc_middle::ty::AliasTy { args: gen_args, .. }) => {
+            are_concrete(gen_args)
+        }
         TyKind::Tuple(types) => types.iter().all(|t| is_concrete(t.kind())),
         TyKind::Bound(..)
         | TyKind::Dynamic(..)

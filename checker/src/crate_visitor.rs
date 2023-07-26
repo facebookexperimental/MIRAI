@@ -22,8 +22,7 @@ use mirai_annotations::*;
 use rustc_errors::{Diagnostic, DiagnosticBuilder};
 use rustc_hir::def_id::{DefId, DefIndex};
 use rustc_middle::mir;
-use rustc_middle::ty::subst::SubstsRef;
-use rustc_middle::ty::{TyCtxt, UnevaluatedConst};
+use rustc_middle::ty::{GenericArgsRef, TyCtxt, UnevaluatedConst};
 use rustc_session::Session;
 
 use crate::body_visitor::BodyVisitor;
@@ -50,10 +49,10 @@ pub struct CrateVisitor<'compilation, 'tcx> {
     pub constant_value_cache: ConstantValueCache<'tcx>,
     pub diagnostics_for: HashMap<DefId, Vec<DiagnosticBuilder<'compilation, ()>>>,
     pub file_name: &'compilation str,
+    pub generic_args_cache: HashMap<DefId, GenericArgsRef<'tcx>>,
     pub known_names_cache: KnownNamesCache,
     pub options: &'compilation Options,
     pub session: &'compilation Session,
-    pub substs_cache: HashMap<DefId, SubstsRef<'tcx>>,
     pub summary_cache: PersistentSummaryCache<'tcx>,
     pub tcx: TyCtxt<'tcx>,
     pub type_cache: Rc<RefCell<TypeCache<'tcx>>>,

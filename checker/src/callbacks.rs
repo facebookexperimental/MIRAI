@@ -162,7 +162,7 @@ impl MiraiCallbacks {
             known_names_cache: KnownNamesCache::create_cache_from_language_items(),
             options: &std::mem::take(&mut self.options),
             session: compiler.session(),
-            substs_cache: HashMap::new(),
+            generic_args_cache: HashMap::new(),
             summary_cache: PersistentSummaryCache::new(tcx, summary_store_path),
             tcx,
             test_run: self.test_run,
