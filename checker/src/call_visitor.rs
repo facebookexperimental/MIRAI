@@ -285,7 +285,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                             .insert(0, (Path::new_parameter(1), self.callee_fun_val.clone()));
                         self.actual_argument_types.insert(
                             0,
-                            tcx.mk_mut_ref(tcx.lifetimes.re_static, specialized_resolved_ty),
+                            Ty::new_mut_ref(tcx, tcx.lifetimes.re_static, specialized_resolved_ty),
                         );
                     }
                 }
@@ -1254,7 +1254,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                             );
                             // decl.ty is not type specialized
                             actual_argument_types[0] =
-                                tcx.mk_mut_ref(tcx.lifetimes.re_static, callee_ty);
+                                Ty::new_mut_ref(tcx, tcx.lifetimes.re_static, callee_ty);
                         }
                     }
                 }

@@ -349,8 +349,7 @@ impl<'tcx> TypeVisitor<'tcx> {
                     if target_type.is_never() {
                         target_type
                     } else {
-                        self.tcx
-                            .mk_imm_ref(self.tcx.lifetimes.re_erased, target_type)
+                        Ty::new_imm_ref(self.tcx, self.tcx.lifetimes.re_erased, target_type)
                     }
                 }
                 Expression::InitialParameterValue { path, .. }
@@ -377,10 +376,13 @@ impl<'tcx> TypeVisitor<'tcx> {
                     self.get_type_from_index(*type_index)
                 }
             }
-            PathEnum::HeapBlock { .. } => self.tcx.mk_ptr(rustc_middle::ty::TypeAndMut {
-                ty: self.tcx.types.u8,
-                mutbl: rustc_hir::Mutability::Not,
-            }),
+            PathEnum::HeapBlock { .. } => Ty::new_ptr(
+                self.tcx,
+                rustc_middle::ty::TypeAndMut {
+                    ty: self.tcx.types.u8,
+                    mutbl: rustc_hir::Mutability::Not,
+                },
+            ),
             PathEnum::Offset { value } => {
                 if let Expression::Offset { left, .. } = &value.expression {
                     let base_path = Path::get_as_path(left.clone());
@@ -440,7 +442,7 @@ impl<'tcx> TypeVisitor<'tcx> {
                 }
                 match &**selector {
                     PathSelector::ConstantSlice { .. } => {
-                        return self.tcx.mk_imm_ref(self.tcx.lifetimes.re_erased, t);
+                        return Ty::new_imm_ref(self.tcx, self.tcx.lifetimes.re_erased, t);
                     }
                     PathSelector::Function => {
                         return t;
@@ -471,10 +473,13 @@ impl<'tcx> TypeVisitor<'tcx> {
                                 match *ordinal {
                                     0 => {
                                         // Field 0 of a sized array is a raw pointer to the array element type
-                                        return self.tcx.mk_ptr(rustc_middle::ty::TypeAndMut {
-                                            ty: *elem_ty,
-                                            mutbl: rustc_hir::Mutability::Not,
-                                        });
+                                        return Ty::new_ptr(
+                                            self.tcx,
+                                            rustc_middle::ty::TypeAndMut {
+                                                ty: *elem_ty,
+                                                mutbl: rustc_hir::Mutability::Not,
+                                            },
+                                        );
                                     }
                                     1 => {
                                         return self.tcx.types.usize;
@@ -501,7 +506,7 @@ impl<'tcx> TypeVisitor<'tcx> {
                                 let mut tuple_types =
                                     substs.as_generator().state_tys(*def_id, self.tcx);
                                 if let Some(field_tys) = tuple_types.nth(*ordinal) {
-                                    return self.tcx.mk_tup_from_iter(field_tys);
+                                    return Ty::new_tup_from_iter(self.tcx, field_tys);
                                 }
                                 info!("generator field not found {:?} {:?}", def_id, ordinal);
                                 return self.tcx.types.never;
@@ -533,10 +538,13 @@ impl<'tcx> TypeVisitor<'tcx> {
                                 match *ordinal {
                                     0 => {
                                         // Field 0 of a str is a raw pointer to char
-                                        return self.tcx.mk_ptr(rustc_middle::ty::TypeAndMut {
-                                            ty: self.tcx.types.char,
-                                            mutbl: rustc_hir::Mutability::Not,
-                                        });
+                                        return Ty::new_ptr(
+                                            self.tcx,
+                                            rustc_middle::ty::TypeAndMut {
+                                                ty: self.tcx.types.char,
+                                                mutbl: rustc_hir::Mutability::Not,
+                                            },
+                                        );
                                     }
                                     1 => {
                                         return self.tcx.types.usize;
@@ -557,10 +565,13 @@ impl<'tcx> TypeVisitor<'tcx> {
                                     match *ordinal {
                                         0 => {
                                             // Field 0 of a slice pointer is a raw pointer to the slice element type
-                                            return self.tcx.mk_ptr(rustc_middle::ty::TypeAndMut {
-                                                ty: self.get_element_type(t),
-                                                mutbl: rustc_hir::Mutability::Mut,
-                                            });
+                                            return Ty::new_ptr(
+                                                self.tcx,
+                                                rustc_middle::ty::TypeAndMut {
+                                                    ty: self.get_element_type(t),
+                                                    mutbl: rustc_hir::Mutability::Mut,
+                                                },
+                                            );
                                         }
                                         1 => {
                                             return self.tcx.types.usize;
@@ -615,7 +626,7 @@ impl<'tcx> TypeVisitor<'tcx> {
                                     let variant = &def.variants()[VariantIdx::new(*ordinal)];
                                     let field_tys =
                                         variant.fields.iter().map(|fd| fd.ty(self.tcx, substs));
-                                    return self.tcx.mk_tup_from_iter(field_tys);
+                                    return Ty::new_tup_from_iter(self.tcx, field_tys);
                                 }
                                 if !type_visitor::is_transparent_wrapper(t) {
                                     break;
@@ -637,8 +648,8 @@ impl<'tcx> TypeVisitor<'tcx> {
                     }
                     PathSelector::Slice(_) => {
                         return {
-                            let slice_ty = self.tcx.mk_slice(self.get_element_type(t));
-                            self.tcx.mk_mut_ref(self.tcx.lifetimes.re_static, slice_ty)
+                            let slice_ty = Ty::new_slice(self.tcx, self.get_element_type(t));
+                            Ty::new_mut_ref(self.tcx, self.tcx.lifetimes.re_static, slice_ty)
                         };
                     }
                     PathSelector::TagField => {
@@ -746,10 +757,13 @@ impl<'tcx> TypeVisitor<'tcx> {
                     if let Some(ty) = self.path_ty_cache.get(rp) {
                         if ty.is_adt() {
                             let param_path = p.replace_root(arg_path, Path::new_parameter(i + 1));
-                            let ptr_ty = self.tcx.mk_ptr(rustc_middle::ty::TypeAndMut {
-                                ty: *ty,
-                                mutbl: rustc_hir::Mutability::Not,
-                            });
+                            let ptr_ty = Ty::new_ptr(
+                                self.tcx,
+                                rustc_middle::ty::TypeAndMut {
+                                    ty: *ty,
+                                    mutbl: rustc_hir::Mutability::Not,
+                                },
+                            );
                             result.insert(param_path, ptr_ty);
                         }
                     }
@@ -868,7 +882,8 @@ impl<'tcx> TypeVisitor<'tcx> {
             TyKind::Ref(region, ty, mutbl) => {
                 if let TyKind::Param(t_par) = ty.kind() {
                     if t_par.name.as_str() == "Self" && !self.actual_argument_types.is_empty() {
-                        return self.tcx.mk_ref(
+                        return Ty::new_ref(
+                            self.tcx,
                             *region,
                             rustc_middle::ty::TypeAndMut {
                                 ty: self.actual_argument_types[0],
@@ -937,15 +952,15 @@ impl<'tcx> TypeVisitor<'tcx> {
                             );
                             let variant = &def.variants().iter().last().unwrap();
                             let field_tys = variant.fields.iter().map(|fd| fd.ty(self.tcx, substs));
-                            return self.tcx.mk_tup_from_iter(field_tys);
+                            return Ty::new_tup_from_iter(self.tcx, field_tys);
                         }
                         let variant = &def.variants()[*ordinal];
                         let field_tys = variant.fields.iter().map(|fd| fd.ty(self.tcx, substs));
-                        return self.tcx.mk_tup_from_iter(field_tys);
+                        return Ty::new_tup_from_iter(self.tcx, field_tys);
                     } else if let TyKind::Generator(def_id, substs, ..) = base_ty.kind() {
                         let mut tuple_types = substs.as_generator().state_tys(*def_id, self.tcx);
                         if let Some(field_tys) = tuple_types.nth(ordinal.index()) {
-                            return self.tcx.mk_tup_from_iter(field_tys);
+                            return Ty::new_tup_from_iter(self.tcx, field_tys);
                         }
                         debug!(
                             "illegally down casting to index {} of {:?} at {:?}",
@@ -1071,9 +1086,7 @@ impl<'tcx> TypeVisitor<'tcx> {
                 ) {
                     let instance_item_def_id = instance.def.def_id();
                     if item_def_id == instance_item_def_id {
-                        return self
-                            .tcx
-                            .mk_projection(projection.def_id, specialized_substs);
+                        return Ty::new_projection(self.tcx, projection.def_id, specialized_substs);
                     }
                     let item_type = self.tcx.type_of(instance_item_def_id).skip_binder();
                     let map =
@@ -1101,15 +1114,16 @@ impl<'tcx> TypeVisitor<'tcx> {
                     gen_arg_type
                 }
             } else {
-                self.tcx
-                    .mk_projection(projection.def_id, specialized_substs)
+                Ty::new_projection(self.tcx, projection.def_id, specialized_substs)
             };
         }
         if map.is_none() {
             return gen_arg_type;
         }
         match gen_arg_type.kind() {
-            TyKind::Adt(def, substs) => self.tcx.mk_adt(*def, self.specialize_substs(substs, map)),
+            TyKind::Adt(def, substs) => {
+                Ty::new_adt(self.tcx, *def, self.specialize_substs(substs, map))
+            }
             TyKind::Array(elem_ty, len) => {
                 let specialized_elem_ty = self.specialize_generic_argument_type(*elem_ty, map);
                 let specialized_len = self.specialize_const(*len, map);
@@ -1118,18 +1132,22 @@ impl<'tcx> TypeVisitor<'tcx> {
             }
             TyKind::Slice(elem_ty) => {
                 let specialized_elem_ty = self.specialize_generic_argument_type(*elem_ty, map);
-                self.tcx.mk_slice(specialized_elem_ty)
+                Ty::new_slice(self.tcx, specialized_elem_ty)
             }
             TyKind::RawPtr(rustc_middle::ty::TypeAndMut { ty, mutbl }) => {
                 let specialized_ty = self.specialize_generic_argument_type(*ty, map);
-                self.tcx.mk_ptr(rustc_middle::ty::TypeAndMut {
-                    ty: specialized_ty,
-                    mutbl: *mutbl,
-                })
+                Ty::new_ptr(
+                    self.tcx,
+                    rustc_middle::ty::TypeAndMut {
+                        ty: specialized_ty,
+                        mutbl: *mutbl,
+                    },
+                )
             }
             TyKind::Ref(region, ty, mutbl) => {
                 let specialized_ty = self.specialize_generic_argument_type(*ty, map);
-                self.tcx.mk_ref(
+                Ty::new_ref(
+                    self.tcx,
                     *region,
                     rustc_middle::ty::TypeAndMut {
                         ty: specialized_ty,
@@ -1137,9 +1155,9 @@ impl<'tcx> TypeVisitor<'tcx> {
                     },
                 )
             }
-            TyKind::FnDef(def_id, substs) => self
-                .tcx
-                .mk_fn_def(*def_id, self.specialize_substs(substs, map)),
+            TyKind::FnDef(def_id, substs) => {
+                Ty::new_fn_def(self.tcx, *def_id, self.specialize_substs(substs, map))
+            }
             TyKind::FnPtr(fn_sig) => {
                 let map_fn_sig = |fn_sig: FnSig<'tcx>| {
                     let specialized_inputs_and_output = self.tcx.mk_type_list_from_iter(
@@ -1156,7 +1174,7 @@ impl<'tcx> TypeVisitor<'tcx> {
                     }
                 };
                 let specialized_fn_sig = fn_sig.map_bound(map_fn_sig);
-                self.tcx.mk_fn_ptr(specialized_fn_sig)
+                Ty::new_fn_ptr(self.tcx, specialized_fn_sig)
             }
             TyKind::Dynamic(predicates, region, kind) => {
                 let specialized_predicates = predicates.iter().map(
@@ -1191,7 +1209,8 @@ impl<'tcx> TypeVisitor<'tcx> {
                         })
                     },
                 );
-                self.tcx.mk_dynamic(
+                Ty::new_dynamic(
+                    self.tcx,
                     self.tcx
                         .mk_poly_existential_predicates_from_iter(specialized_predicates),
                     *region,
@@ -1210,19 +1229,20 @@ impl<'tcx> TypeVisitor<'tcx> {
                         return gen_arg_type;
                     }
                 }
-                let specialized_closure = self
-                    .tcx
-                    .mk_closure(*def_id, self.specialize_substs(substs, map));
+                let specialized_closure =
+                    Ty::new_closure(self.tcx, *def_id, self.specialize_substs(substs, map));
                 let mut borrowed_closures_being_specialized =
                     self.closures_being_specialized.borrow_mut();
                 let closures_being_specialized = borrowed_closures_being_specialized.deref_mut();
                 closures_being_specialized.remove(def_id);
                 specialized_closure
             }
-            TyKind::Generator(def_id, substs, movability) => {
-                self.tcx
-                    .mk_generator(*def_id, self.specialize_substs(substs, map), *movability)
-            }
+            TyKind::Generator(def_id, substs, movability) => Ty::new_generator(
+                self.tcx,
+                *def_id,
+                self.specialize_substs(substs, map),
+                *movability,
+            ),
             TyKind::GeneratorWitness(bound_types) => {
                 let map_types = |types: &rustc_middle::ty::List<Ty<'tcx>>| {
                     self.tcx.mk_type_list_from_iter(
@@ -1232,9 +1252,10 @@ impl<'tcx> TypeVisitor<'tcx> {
                     )
                 };
                 let specialized_types = bound_types.map_bound(map_types);
-                self.tcx.mk_generator_witness(specialized_types)
+                Ty::new_generator_witness(self.tcx, specialized_types)
             }
-            TyKind::Tuple(types) => self.tcx.mk_tup_from_iter(
+            TyKind::Tuple(types) => Ty::new_tup_from_iter(
+                self.tcx,
                 types
                     .iter()
                     .map(|ty| self.specialize_generic_argument_type(ty, map)),
@@ -1242,9 +1263,7 @@ impl<'tcx> TypeVisitor<'tcx> {
             TyKind::Alias(
                 rustc_middle::ty::Opaque,
                 rustc_middle::ty::AliasTy { def_id, substs, .. },
-            ) => self
-                .tcx
-                .mk_opaque(*def_id, self.specialize_substs(substs, map)),
+            ) => Ty::new_opaque(self.tcx, *def_id, self.specialize_substs(substs, map)),
             TyKind::Param(ParamTy { name, .. }) => {
                 if let Some(map) = map {
                     if let Some(gen_arg) = map.get(name) {

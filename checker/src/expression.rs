@@ -1467,7 +1467,7 @@ impl ExpressionType {
             U128 => tcx.types.u128,
             Unit => tcx.types.unit,
             Usize => tcx.types.usize,
-            ThinPointer => tcx.mk_imm_ptr(tcx.mk_unit()),
+            ThinPointer => Ty::new_imm_ptr(tcx, tcx.types.unit),
             NonPrimitive => tcx.types.trait_object_dummy_self,
         }
     }

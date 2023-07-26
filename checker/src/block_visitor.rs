@@ -15,7 +15,7 @@ use rustc_hir::def_id::DefId;
 use rustc_index::{Idx, IndexVec};
 use rustc_middle::mir;
 use rustc_middle::mir::interpret::{alloc_range, ConstValue, GlobalAlloc, Scalar};
-use rustc_middle::ty::adjustment::PointerCast;
+use rustc_middle::ty::adjustment::PointerCoercion;
 use rustc_middle::ty::layout::LayoutCx;
 use rustc_middle::ty::subst::{GenericArg, SubstsRef};
 use rustc_middle::ty::{
@@ -482,6 +482,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         // meaning.
         _replace: bool,
     ) {
+        let tcx = self.bv.cv.tcx;
         let place_path = self.get_path_for_place(place);
         let path = place_path.canonicalize(&self.bv.current_environment);
         let mut ty = self
@@ -497,12 +498,8 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             .set_path_rustc_type(path.clone(), ty);
 
         if let TyKind::Adt(def, substs) = ty.kind() {
-            if let Some(destructor) = self.bv.tcx.adt_destructor(def.did()) {
-                let actual_argument_types = vec![self
-                    .bv
-                    .cv
-                    .tcx
-                    .mk_mut_ref(self.bv.cv.tcx.lifetimes.re_static, ty)];
+            if let Some(destructor) = tcx.adt_destructor(def.did()) {
+                let actual_argument_types = vec![Ty::new_mut_ref(tcx, tcx.lifetimes.re_static, ty)];
                 let callee_generic_arguments = self
                     .type_visitor()
                     .specialize_substs(substs, &self.type_visitor().generic_argument_map);
@@ -511,7 +508,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     callee_generic_arguments,
                     &actual_argument_types,
                 );
-                let fun_ty = self.bv.tcx.type_of(destructor.did).skip_binder();
+                let fun_ty = tcx.type_of(destructor.did).skip_binder();
                 let func_const = self
                     .visit_function_reference(destructor.did, fun_ty, Some(substs))
                     .clone();
@@ -1892,10 +1889,13 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         // To look up box.0.0 we need the type of the thin pointer, which we
                         // derive from target_type (which is known to be a slice pointer).
                         let deref_ty = self.type_visitor().get_dereferenced_type(target_type);
-                        let thin_ptr_ty = self.bv.tcx.mk_ptr(rustc_middle::ty::TypeAndMut {
-                            ty: deref_ty,
-                            mutbl: rustc_hir::Mutability::Not,
-                        });
+                        let thin_ptr_ty = Ty::new_ptr(
+                            self.bv.tcx,
+                            rustc_middle::ty::TypeAndMut {
+                                ty: deref_ty,
+                                mutbl: rustc_hir::Mutability::Not,
+                            },
+                        );
                         let ptr_val = self
                             .bv
                             .lookup_path_and_refine_result(qualifier.clone(), thin_ptr_ty);
@@ -2067,7 +2067,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             | mir::CastKind::PointerFromExposedAddress
             // All sorts of pointer-to-pointer casts. Note that reference-to-raw-ptr casts are
             // translated into `&raw mut/const *r`, i.e., they are not actually casts.
-            | mir::CastKind::Pointer(..)
+            | mir::CastKind::PointerCoercion(..)
             // Cast into a dyn* object.
             | mir::CastKind::DynStar => {
                 // The value remains unchanged, but pointers may be fat, so use copy_or_move_elements
@@ -2086,7 +2086,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         return;
                     }
                 };
-                if matches!(cast_kind, mir::CastKind::Pointer(PointerCast::Unsize)){
+                if matches!(cast_kind, mir::CastKind::PointerCoercion(PointerCoercion::Unsize)){
                     // Unsize a pointer/reference value, e.g., `&[T; n]` to
                     // `&[T]`. Note that the source could be a thin or fat pointer.
                     // This will do things like convert thin pointers to fat
@@ -2145,7 +2145,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     return;
                 }
                 let mut source_path = self.visit_rh_place(place);
-                if matches!(cast_kind, mir::CastKind::Pointer(PointerCast::ClosureFnPointer(_))){
+                if matches!(cast_kind, mir::CastKind::PointerCoercion(PointerCoercion::ClosureFnPointer(_))){
                     source_path = Path::new_function(source_path)
                 }
                 self.bv
@@ -2781,13 +2781,15 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
     /// Synthesizes a MIRAI constant value from a RustC constant as used in the type system
     #[logfn_inputs(TRACE)]
     pub fn visit_const(&mut self, literal: &Const<'tcx>) -> Rc<AbstractValue> {
-        let mut val = literal.kind();
+        let mut kind = literal.kind();
         let lty = literal.ty();
-        if let rustc_middle::ty::ConstKind::Unevaluated(_unevaluated) = &val {
-            val = val.eval(self.bv.tcx, self.type_visitor().get_param_env());
+        if let rustc_middle::ty::ConstKind::Unevaluated(_unevaluated) = &kind {
+            kind = literal
+                .eval(self.bv.tcx, self.type_visitor().get_param_env())
+                .kind();
         }
 
-        match &val {
+        match &kind {
             // A const generic parameter.
             rustc_middle::ty::ConstKind::Param(ParamConst { index, .. }) => {
                 if let Some(gen_args) = self.type_visitor().generic_arguments {
@@ -2797,7 +2799,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 }
                 assume_unreachable!(
                     "reference to unmatched generic constant argument {:?} {:?} {:?}",
-                    val,
+                    kind,
                     self.type_visitor().generic_arguments,
                     self.bv.current_span
                 );
@@ -2819,7 +2821,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 heap_block
             }
             _ => {
-                debug!("val {:?}", val);
+                debug!("kind {:?}", kind);
                 Rc::new(ConstantDomain::Unimplemented.into())
             }
         }

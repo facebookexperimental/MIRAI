@@ -1860,16 +1860,17 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     s_path = Path::new_field(s_path, 0);
                     ty = self.type_visitor().remove_transparent_wrapper(ty);
                 }
-                let source_rustc_type = self
-                    .tcx
-                    .mk_ref(*region, rustc_middle::ty::TypeAndMut { ty, mutbl: *mutbl });
+                let source_rustc_type = Ty::new_ref(
+                    self.tcx,
+                    *region,
+                    rustc_middle::ty::TypeAndMut { ty, mutbl: *mutbl },
+                );
                 let s_ref_val = AbstractValue::make_reference(s_path);
                 let source_path = Path::new_computed(s_ref_val);
                 if self.type_visitor.is_slice_pointer(source_rustc_type.kind()) {
                     let pointer_path = Path::new_field(source_path.clone(), 0);
-                    let pointer_type = self
-                        .tcx
-                        .mk_ptr(rustc_middle::ty::TypeAndMut { ty, mutbl: *mutbl });
+                    let pointer_type =
+                        Ty::new_ptr(self.tcx, rustc_middle::ty::TypeAndMut { ty, mutbl: *mutbl });
                     source_fields.push((pointer_path, pointer_type));
                     let len_path = Path::new_length(source_path);
                     source_fields.push((len_path, self.tcx.types.usize));
@@ -1890,10 +1891,13 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
             _ => {
                 if self.type_visitor.is_slice_pointer(source_rustc_type.kind()) {
                     let pointer_path = Path::new_field(source_path.clone(), 0);
-                    let pointer_type = self.tcx.mk_ptr(rustc_middle::ty::TypeAndMut {
-                        ty: self.type_visitor.get_element_type(source_rustc_type),
-                        mutbl: rustc_hir::Mutability::Not,
-                    });
+                    let pointer_type = Ty::new_ptr(
+                        self.tcx,
+                        rustc_middle::ty::TypeAndMut {
+                            ty: self.type_visitor.get_element_type(source_rustc_type),
+                            mutbl: rustc_hir::Mutability::Not,
+                        },
+                    );
                     source_fields.push((pointer_path, pointer_type));
                     let len_path = Path::new_length(source_path);
                     source_fields.push((len_path, self.tcx.types.usize));
@@ -1932,9 +1936,11 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     t_path = Path::new_field(t_path, 0);
                     ty = self.type_visitor().remove_transparent_wrapper(ty);
                 }
-                let target_rustc_type = self
-                    .tcx
-                    .mk_ref(*region, rustc_middle::ty::TypeAndMut { ty, mutbl: *mutbl });
+                let target_rustc_type = Ty::new_ref(
+                    self.tcx,
+                    *region,
+                    rustc_middle::ty::TypeAndMut { ty, mutbl: *mutbl },
+                );
                 let t_ref_val = AbstractValue::make_reference(t_path);
                 let target_path = Path::new_computed(t_ref_val);
                 if self
@@ -1942,10 +1948,13 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     .is_slice_pointer(target_rustc_type.kind())
                 {
                     let pointer_path = Path::new_field(target_path.clone(), 0);
-                    let pointer_type = self.tcx.mk_ptr(rustc_middle::ty::TypeAndMut {
-                        ty: self.type_visitor.get_element_type(target_rustc_type),
-                        mutbl: rustc_hir::Mutability::Not,
-                    });
+                    let pointer_type = Ty::new_ptr(
+                        self.tcx,
+                        rustc_middle::ty::TypeAndMut {
+                            ty: self.type_visitor.get_element_type(target_rustc_type),
+                            mutbl: rustc_hir::Mutability::Not,
+                        },
+                    );
                     target_fields.push((pointer_path, pointer_type));
                     let len_path = Path::new_length(target_path);
                     target_fields.push((len_path, self.tcx.types.usize));
@@ -1969,10 +1978,13 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     .is_slice_pointer(target_rustc_type.kind())
                 {
                     let pointer_path = Path::new_field(target_path.clone(), 0);
-                    let pointer_type = self.tcx.mk_ptr(rustc_middle::ty::TypeAndMut {
-                        ty: self.type_visitor.get_element_type(target_rustc_type),
-                        mutbl: rustc_hir::Mutability::Not,
-                    });
+                    let pointer_type = Ty::new_ptr(
+                        self.tcx,
+                        rustc_middle::ty::TypeAndMut {
+                            ty: self.type_visitor.get_element_type(target_rustc_type),
+                            mutbl: rustc_hir::Mutability::Not,
+                        },
+                    );
                     target_fields.push((pointer_path, pointer_type));
                     let len_path = Path::new_length(target_path);
                     target_fields.push((len_path, self.tcx.types.usize));
