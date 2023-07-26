@@ -307,7 +307,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 destination,
                 target,
                 unwind,
-                from_hir_call,
+                call_source,
                 fn_span,
             } => self.visit_call(
                 func,
@@ -315,7 +315,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 *destination,
                 *target,
                 *unwind,
-                *from_hir_call,
+                *call_source,
                 fn_span,
             ),
             mir::TerminatorKind::Assert {
@@ -583,7 +583,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
     /// reused across function calls without duplicating the contents.
     /// * `destination` - Destination for the return value. If some, the call returns a value.
     /// * `unwind` - Work to be done if the call unwinds.
-    /// * `from_hir_call` - Whether this is from a call in HIR, rather than from an overloaded
+    /// * `call_source` - Where this call came from in HIR/THIR.
     /// operator. True for overloaded function call.
     #[allow(clippy::too_many_arguments)]
     #[logfn_inputs(TRACE)]
@@ -594,7 +594,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         destination: mir::Place<'tcx>,
         target: Option<mir::BasicBlock>,
         unwind: mir::UnwindAction,
-        from_hir_call: bool,
+        _call_source: mir::CallSource,
         fn_span: &rustc_span::Span,
     ) {
         // This offset is used to distinguish any local variables that leak out from the called function
