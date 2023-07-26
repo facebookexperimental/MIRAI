@@ -68,10 +68,10 @@ commit;
 /* EXPECTED:CALL_SITES{
   "files": [
     "tests/call_graph/fnptr_fold.rs",
-    "/rustc/8b4b20836b832e91aa605a2faf5e2a55190202c8/library/std/src/io/stdio.rs",
-    "/rustc/8b4b20836b832e91aa605a2faf5e2a55190202c8/library/core/src/fmt/mod.rs",
-    "/rustc/8b4b20836b832e91aa605a2faf5e2a55190202c8/library/core/src/slice/mod.rs",
-    "/rustc/8b4b20836b832e91aa605a2faf5e2a55190202c8/library/core/src/ptr/metadata.rs"
+    "/rustc/500647fd8138cc09e87edb08d62f81654fbf6ef8/library/std/src/io/stdio.rs",
+    "/rustc/500647fd8138cc09e87edb08d62f81654fbf6ef8/library/core/src/fmt/mod.rs",
+    "/rustc/500647fd8138cc09e87edb08d62f81654fbf6ef8/library/core/src/slice/mod.rs",
+    "/rustc/500647fd8138cc09e87edb08d62f81654fbf6ef8/library/core/src/ptr/metadata.rs"
   ],
   "callables": [
     {
@@ -113,7 +113,7 @@ commit;
     {
       "name": "/core/core::slice::<impl [T]>::len(&[T])->usize",
       "file_index": 3,
-      "first_line": 140,
+      "first_line": 141,
       "local": true
     },
     {
@@ -175,7 +175,7 @@ commit;
     ],
     [
       3,
-      141,
+      142,
       9,
       6,
       7

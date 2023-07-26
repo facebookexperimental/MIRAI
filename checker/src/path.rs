@@ -893,7 +893,9 @@ impl PathRefinement for Rc<Path> {
         }
 
         if let PathEnum::Offset { value } = &self.value {
-            let Expression::Offset { left, right } = &value.expression else {unreachable!()};
+            let Expression::Offset { left, right } = &value.expression else {
+                unreachable!()
+            };
             if let Expression::Variable { path, var_type } = &left.expression {
                 let canonical_left_path = path.canonicalize(environment);
                 let canonical_lef_var =

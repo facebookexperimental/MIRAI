@@ -3317,7 +3317,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 &bytes[size..]
             },
             TyKind::Uint(UintTy::U8) => unsafe {
-                let uint_ptr = bytes.as_ptr() as *const u8;
+                let uint_ptr = bytes.as_ptr();
                 let u = self.bv.get_u128_const_val((*uint_ptr) as u128);
                 self.bv.update_value_at(target_path, u);
                 &bytes[1..]

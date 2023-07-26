@@ -2867,22 +2867,37 @@ pub mod core {
             ) {
                 std::intrinsics::copy_nonoverlapping(src, dst, count);
             }
-            // pub fn volatile_copy_memory<T>(dst: *mut T, src: *const T, count: usize) {}
-            // pub fn volatile_set_memory<T>(dst: *mut T, val: T, count: usize) {
-            //     *dst = val;
-            // }
-            // pub fn volatile_load<T>(src: *const T) -> T {
-            //     *src
-            // }
-            // pub fn volatile_store<T>(dst: *mut T, val: T) {
-            //     *dst = val;
-            // }
-            // pub fn unaligned_volatile_load<T>(src: *const T) -> T {
-            //     *src
-            // }
-            // pub fn unaligned_volatile_store<T>(dst: *mut T, val: T) {
-            //     *dst = val
-            // }
+            pub unsafe fn volatile_copy_memory<T>(dst: *mut T, src: *const T, count: usize) {
+                std::intrinsics::copy_nonoverlapping(src, dst, count);
+            }
+            pub unsafe fn volatile_set_memory<T>(dst: *mut T, val: T, count: usize) {
+                // todo: add a intrinsic function for this to MIRAI
+                *dst = val;
+            }
+            pub unsafe fn volatile_load<T>(src: *const T) -> T
+            where
+                T: Copy,
+            {
+                *src
+            }
+            pub unsafe fn volatile_store<T>(dst: *mut T, val: T)
+            where
+                T: Copy,
+            {
+                *dst = val;
+            }
+            pub unsafe fn unaligned_volatile_load<T>(src: *const T) -> T
+            where
+                T: Copy,
+            {
+                *src
+            }
+            pub unsafe fn unaligned_volatile_store<T>(dst: *mut T, val: T)
+            where
+                T: Copy,
+            {
+                *dst = val
+            }
 
             default_contract!(float_to_int_unchecked);
             pub fn fmaf32(a: f32, b: f32, c: f32) -> f32 {

@@ -19,6 +19,7 @@ extern crate rayon;
 extern crate rustc_ast;
 extern crate rustc_data_structures;
 extern crate rustc_driver;
+extern crate rustc_session;
 extern crate tempfile;
 
 use std::collections::HashMap;
@@ -31,6 +32,7 @@ use std::str::FromStr;
 use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
 use regex::Regex;
+use rustc_session::*;
 use serde::Deserialize;
 use tempfile::TempDir;
 use walkdir::WalkDir;
@@ -148,9 +150,9 @@ fn run_directory(directory_path: PathBuf) -> Vec<(String, String)> {
     files_and_temp_dirs
 }
 
-fn build_options() -> Options {
+fn build_options(early_error_handler: &EarlyErrorHandler) -> Options {
     let mut options = Options::default();
-    options.parse_from_str("", true); // get defaults
+    options.parse_from_str("", early_error_handler, true); // get defaults
     options.diag_level = DiagLevel::Paranoid; // override default
     options.max_analysis_time_for_body = 20;
     options.max_analysis_time_for_crate = 60;
@@ -254,6 +256,7 @@ fn invoke_driver_on_files(
 // Runs the single test case found in file_name, using temp_dir_path as the place
 // to put compiler output, which for Mirai includes the persistent summary store.
 fn invoke_driver(
+    early_error_handler: &EarlyErrorHandler,
     file_name: String,
     temp_dir_path: String,
     sys_root: String,
@@ -265,7 +268,8 @@ fn invoke_driver(
         let file_content = read_to_string(Path::new(&file_name)).unwrap();
         let options_re = Regex::new(r"(?m)^\s*//\s*MIRAI_FLAGS\s(?P<flags>.*)$").unwrap();
         if let Some(captures) = options_re.captures(&file_content) {
-            rustc_args = options.parse_from_str(&captures["flags"], true); // override based on test source
+            rustc_args = options.parse_from_str(&captures["flags"], early_error_handler, true);
+            // override based on test source
         }
     }
 
@@ -406,15 +410,15 @@ fn check_call_graph_output(
         if compare_lines(&expected, &actual) {
             0
         } else {
-            // println!("{file_name} failed to match {output_type:?} output");
-            // println!("Expected:\n{expected}");
-            // println!("Actual:\n{actual}");
-            // 1
-            let c = expected_regex.captures(&test_case_data).unwrap();
-            let updated =
-                expected_regex.replace(&test_case_data, format!("{}{actual}{}", &c[1], &c[3]));
-            fs::write(Path::new(&file_name), updated.to_string()).unwrap();
-            0
+            println!("{file_name} failed to match {output_type:?} output");
+            println!("Expected:\n{expected}");
+            println!("Actual:\n{actual}");
+            1
+            // let c = expected_regex.captures(&test_case_data).unwrap();
+            // let updated =
+            //     expected_regex.replace(&test_case_data, format!("{}{actual}{}", &c[1], &c[3]));
+            // fs::write(Path::new(&file_name), updated.to_string()).unwrap();
+            // 0
         }
     } else {
         println!("{file_name} failed to read {output_type:?} output");
@@ -424,9 +428,11 @@ fn check_call_graph_output(
 
 // Default test driver
 fn start_driver(config: DriverConfig) -> usize {
+    let early_error_handler = EarlyErrorHandler::new(config::ErrorOutputType::default());
     let sys_root = utils::find_sysroot();
-    let options = build_options();
+    let options = build_options(&early_error_handler);
     self::invoke_driver(
+        &early_error_handler,
         config.file_name,
         config.temp_dir_path,
         sys_root,
@@ -438,12 +444,14 @@ fn start_driver(config: DriverConfig) -> usize {
 // Test driver for call graph generation;
 // sets up call graph configuration.
 fn start_driver_call_graph(config: DriverConfig) -> usize {
+    let early_error_handler = EarlyErrorHandler::new(config::ErrorOutputType::default());
     let sys_root = utils::find_sysroot();
-    let mut options = build_options();
+    let mut options = build_options(&early_error_handler);
     let (call_graph_config, call_graph_config_path) =
         generate_call_graph_config(&config.file_name, &config.temp_dir_path);
     options.call_graph_config = Some(call_graph_config_path);
     let result = self::invoke_driver(
+        &early_error_handler,
         config.file_name.clone(),
         config.temp_dir_path.clone(),
         sys_root,
