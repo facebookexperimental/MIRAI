@@ -17,8 +17,7 @@ use mirai_annotations::*;
 use rustc_errors::DiagnosticBuilder;
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir;
-use rustc_middle::ty::subst::SubstsRef;
-use rustc_middle::ty::{AdtDef, Const, Ty, TyCtxt, TyKind, TypeAndMut, UintTy};
+use rustc_middle::ty::{AdtDef, Const, GenericArgsRef, Ty, TyCtxt, TyKind, TypeAndMut, UintTy};
 
 use crate::abstract_value::{self, AbstractValue, AbstractValueTrait, BOTTOM};
 use crate::block_visitor::BlockVisitor;
@@ -295,7 +294,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
         let dominators = self.mir.basic_blocks.dominators();
         for (location1, callee_defid1) in self.block_to_call.iter() {
             for (location2, callee_defid2) in self.block_to_call.iter() {
-                if location1 != location2 && location1.dominates(*location2, &dominators) {
+                if location1 != location2 && location1.dominates(*location2, dominators) {
                     self.cv.call_graph.add_dom(*callee_defid1, *callee_defid2);
                 }
             }
@@ -634,7 +633,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
             if self.active_calls_map.contains_key(&def_id) {
                 return;
             }
-            let generic_args = self.cv.substs_cache.get(&def_id).cloned();
+            let generic_args = self.cv.generic_args_cache.get(&def_id).cloned();
             let callee_generic_argument_map = if let Some(generic_args) = generic_args {
                 self.type_visitor()
                     .get_generic_arguments_map(def_id, generic_args, &[])
@@ -1723,13 +1722,13 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 let union_type = self
                     .type_visitor()
                     .get_path_rustc_type(qualifier, self.current_span);
-                if let TyKind::Adt(def, substs) = union_type.kind() {
-                    let substs = self
+                if let TyKind::Adt(def, args) = union_type.kind() {
+                    let args = self
                         .type_visitor
-                        .specialize_substs(substs, &self.type_visitor().generic_argument_map);
+                        .specialize_generic_args(args, &self.type_visitor().generic_argument_map);
                     for (i, field) in def.all_fields().enumerate() {
                         let target_type = self.type_visitor().specialize_generic_argument_type(
-                            field.ty(self.tcx, substs),
+                            field.ty(self.tcx, args),
                             &self.type_visitor().generic_argument_map,
                         );
                         let target_path = Path::new_union_field(qualifier.clone(), i, *num_cases);
@@ -1794,7 +1793,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
         fn add_leaf_fields_for<'a>(
             path: Rc<Path>,
             def: &'a AdtDef,
-            substs: SubstsRef<'a>,
+            args: GenericArgsRef<'a>,
             tcx: TyCtxt<'a>,
             accumulator: &mut Vec<(Rc<Path>, Ty<'a>)>,
         ) {
@@ -1823,9 +1822,9 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 let variant = def.variants().iter().next().expect("at least one variant");
                 for (i, field) in variant.fields.iter().enumerate() {
                     let field_path = Path::new_field(path.clone(), i);
-                    let field_ty = field.ty(tcx, substs);
-                    if let TyKind::Adt(def, substs) = field_ty.kind() {
-                        add_leaf_fields_for(field_path, def, substs, tcx, accumulator)
+                    let field_ty = field.ty(tcx, args);
+                    if let TyKind::Adt(def, args) = field_ty.kind() {
+                        add_leaf_fields_for(field_path, def, args, tcx, accumulator)
                     } else {
                         accumulator.push((field_path, field_ty))
                     }
@@ -1860,16 +1859,17 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     s_path = Path::new_field(s_path, 0);
                     ty = self.type_visitor().remove_transparent_wrapper(ty);
                 }
-                let source_rustc_type = self
-                    .tcx
-                    .mk_ref(*region, rustc_middle::ty::TypeAndMut { ty, mutbl: *mutbl });
+                let source_rustc_type = Ty::new_ref(
+                    self.tcx,
+                    *region,
+                    rustc_middle::ty::TypeAndMut { ty, mutbl: *mutbl },
+                );
                 let s_ref_val = AbstractValue::make_reference(s_path);
                 let source_path = Path::new_computed(s_ref_val);
                 if self.type_visitor.is_slice_pointer(source_rustc_type.kind()) {
                     let pointer_path = Path::new_field(source_path.clone(), 0);
-                    let pointer_type = self
-                        .tcx
-                        .mk_ptr(rustc_middle::ty::TypeAndMut { ty, mutbl: *mutbl });
+                    let pointer_type =
+                        Ty::new_ptr(self.tcx, rustc_middle::ty::TypeAndMut { ty, mutbl: *mutbl });
                     source_fields.push((pointer_path, pointer_type));
                     let len_path = Path::new_length(source_path);
                     source_fields.push((len_path, self.tcx.types.usize));
@@ -1890,10 +1890,13 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
             _ => {
                 if self.type_visitor.is_slice_pointer(source_rustc_type.kind()) {
                     let pointer_path = Path::new_field(source_path.clone(), 0);
-                    let pointer_type = self.tcx.mk_ptr(rustc_middle::ty::TypeAndMut {
-                        ty: self.type_visitor.get_element_type(source_rustc_type),
-                        mutbl: rustc_hir::Mutability::Not,
-                    });
+                    let pointer_type = Ty::new_ptr(
+                        self.tcx,
+                        rustc_middle::ty::TypeAndMut {
+                            ty: self.type_visitor.get_element_type(source_rustc_type),
+                            mutbl: rustc_hir::Mutability::Not,
+                        },
+                    );
                     source_fields.push((pointer_path, pointer_type));
                     let len_path = Path::new_length(source_path);
                     source_fields.push((len_path, self.tcx.types.usize));
@@ -1932,9 +1935,11 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     t_path = Path::new_field(t_path, 0);
                     ty = self.type_visitor().remove_transparent_wrapper(ty);
                 }
-                let target_rustc_type = self
-                    .tcx
-                    .mk_ref(*region, rustc_middle::ty::TypeAndMut { ty, mutbl: *mutbl });
+                let target_rustc_type = Ty::new_ref(
+                    self.tcx,
+                    *region,
+                    rustc_middle::ty::TypeAndMut { ty, mutbl: *mutbl },
+                );
                 let t_ref_val = AbstractValue::make_reference(t_path);
                 let target_path = Path::new_computed(t_ref_val);
                 if self
@@ -1942,10 +1947,13 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     .is_slice_pointer(target_rustc_type.kind())
                 {
                     let pointer_path = Path::new_field(target_path.clone(), 0);
-                    let pointer_type = self.tcx.mk_ptr(rustc_middle::ty::TypeAndMut {
-                        ty: self.type_visitor.get_element_type(target_rustc_type),
-                        mutbl: rustc_hir::Mutability::Not,
-                    });
+                    let pointer_type = Ty::new_ptr(
+                        self.tcx,
+                        rustc_middle::ty::TypeAndMut {
+                            ty: self.type_visitor.get_element_type(target_rustc_type),
+                            mutbl: rustc_hir::Mutability::Not,
+                        },
+                    );
                     target_fields.push((pointer_path, pointer_type));
                     let len_path = Path::new_length(target_path);
                     target_fields.push((len_path, self.tcx.types.usize));
@@ -1969,10 +1977,13 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     .is_slice_pointer(target_rustc_type.kind())
                 {
                     let pointer_path = Path::new_field(target_path.clone(), 0);
-                    let pointer_type = self.tcx.mk_ptr(rustc_middle::ty::TypeAndMut {
-                        ty: self.type_visitor.get_element_type(target_rustc_type),
-                        mutbl: rustc_hir::Mutability::Not,
-                    });
+                    let pointer_type = Ty::new_ptr(
+                        self.tcx,
+                        rustc_middle::ty::TypeAndMut {
+                            ty: self.type_visitor.get_element_type(target_rustc_type),
+                            mutbl: rustc_hir::Mutability::Not,
+                        },
+                    );
                     target_fields.push((pointer_path, pointer_type));
                     let len_path = Path::new_length(target_path);
                     target_fields.push((len_path, self.tcx.types.usize));
@@ -2662,18 +2673,19 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     let union_type = self
                         .type_visitor()
                         .get_path_rustc_type(qualifier, self.current_span);
-                    if let TyKind::Adt(def, substs) = union_type.kind() {
-                        let substs = self
-                            .type_visitor
-                            .specialize_substs(substs, &self.type_visitor().generic_argument_map);
+                    if let TyKind::Adt(def, args) = union_type.kind() {
+                        let generic_args = self.type_visitor.specialize_generic_args(
+                            args,
+                            &self.type_visitor().generic_argument_map,
+                        );
                         let source_field = def.all_fields().nth(*case_index).unwrap();
                         let source_type = self.type_visitor().specialize_generic_argument_type(
-                            source_field.ty(self.tcx, substs),
+                            source_field.ty(self.tcx, generic_args),
                             &self.type_visitor().generic_argument_map,
                         );
                         for (i, field) in def.all_fields().enumerate() {
                             let target_type = self.type_visitor().specialize_generic_argument_type(
-                                field.ty(self.tcx, substs),
+                                field.ty(self.tcx, generic_args),
                                 &self.type_visitor().generic_argument_map,
                             );
                             let target_path =

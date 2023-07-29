@@ -346,7 +346,7 @@ fn extract_reachable_heap_allocations(
                 }
             }
         }
-        heap_roots.extend(new_roots.into_iter());
+        heap_roots.extend(new_roots);
     }
 }
 

@@ -47,7 +47,7 @@ impl<'fixed, 'analysis, 'compilation, 'tcx>
         body_visitor: &'fixed mut BodyVisitor<'analysis, 'compilation, 'tcx>,
     ) -> FixedPointVisitor<'fixed, 'analysis, 'compilation, 'tcx> {
         let dominators = body_visitor.mir.basic_blocks.dominators();
-        let (block_indices, loop_anchors) = get_sorted_block_indices(body_visitor.mir, &dominators);
+        let (block_indices, loop_anchors) = get_sorted_block_indices(body_visitor.mir, dominators);
         // in_state[bb] is the join (or widening) of the out_state values of each predecessor of bb
         let mut in_state: HashMap<mir::BasicBlock, Environment> = HashMap::new();
         // out_state[bb] is the environment that results from analyzing block bb, given in_state[bb]
@@ -64,7 +64,7 @@ impl<'fixed, 'analysis, 'compilation, 'tcx>
             bv: body_visitor,
             block_indices,
             loop_anchors,
-            dominators,
+            dominators: dominators.clone(),
             in_state,
             out_state,
             terminator_state,

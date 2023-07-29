@@ -12,8 +12,7 @@ use log_derive::*;
 use mirai_annotations::*;
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir;
-use rustc_middle::ty::subst::{GenericArg, GenericArgKind, SubstsRef};
-use rustc_middle::ty::{Ty, TyKind, UintTy};
+use rustc_middle::ty::{GenericArg, GenericArgKind, GenericArgsRef, Ty, TyKind, UintTy};
 use rustc_target::abi::VariantIdx;
 
 use crate::abstract_value::{AbstractValue, AbstractValueTrait};
@@ -38,7 +37,7 @@ pub struct CallVisitor<'call, 'block, 'analysis, 'compilation, 'tcx> {
     pub callee_def_id: DefId,
     pub callee_func_ref: Option<Rc<FunctionReference>>,
     pub callee_fun_val: Rc<AbstractValue>,
-    pub callee_generic_arguments: Option<SubstsRef<'tcx>>,
+    pub callee_generic_arguments: Option<GenericArgsRef<'tcx>>,
     pub callee_known_name: KnownNames,
     pub callee_generic_argument_map: Option<HashMap<rustc_span::Symbol, GenericArg<'tcx>>>,
     pub unwind: mir::UnwindAction,
@@ -63,7 +62,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
     pub(crate) fn new(
         block_visitor: &'call mut BlockVisitor<'block, 'analysis, 'compilation, 'tcx>,
         callee_def_id: DefId,
-        callee_generic_arguments: Option<SubstsRef<'tcx>>,
+        callee_generic_arguments: Option<GenericArgsRef<'tcx>>,
         callee_generic_argument_map: Option<HashMap<rustc_span::Symbol, GenericArg<'tcx>>>,
         environment_before_call: Environment,
         func_const: ConstantDomain,
@@ -244,7 +243,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                 let resolved_ty = tcx.type_of(resolved_def_id).skip_binder();
                 let resolved_map = self.type_visitor().get_generic_arguments_map(
                     resolved_def_id,
-                    instance.substs,
+                    instance.args,
                     &[],
                 );
                 let specialized_resolved_ty = self
@@ -260,7 +259,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                     .visit_function_reference(
                         resolved_def_id,
                         specialized_resolved_ty,
-                        Some(instance.substs),
+                        Some(instance.args),
                     )
                     .clone();
                 self.callee_func_ref = if let ConstantDomain::Function(fr) = &func_const {
@@ -270,10 +269,10 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                     None
                 };
                 self.callee_fun_val = Rc::new(func_const.into());
-                self.callee_generic_arguments = Some(instance.substs);
+                self.callee_generic_arguments = Some(instance.args);
                 self.callee_generic_argument_map = self.type_visitor().get_generic_arguments_map(
                     resolved_def_id,
-                    instance.substs,
+                    instance.args,
                     &self.actual_argument_types,
                 );
                 if has_mir && specialized_resolved_ty.is_closure() {
@@ -285,7 +284,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                             .insert(0, (Path::new_parameter(1), self.callee_fun_val.clone()));
                         self.actual_argument_types.insert(
                             0,
-                            tcx.mk_mut_ref(tcx.lifetimes.re_static, specialized_resolved_ty),
+                            Ty::new_mut_ref(tcx, tcx.lifetimes.re_static, specialized_resolved_ty),
                         );
                     }
                 }
@@ -666,7 +665,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
     fn handled_clone(&mut self) -> bool {
         precondition!(self.actual_argument_types.len() == 1);
         if let TyKind::Ref(_, t, _) = self.actual_argument_types[0].kind() {
-            if let TyKind::Adt(def, substs) = t.kind() {
+            if let TyKind::Adt(def, args) = t.kind() {
                 if def.variants().is_empty() {
                     return false;
                 }
@@ -707,9 +706,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                             {
                                 // The caller might be able to avoid the diagnostic because it
                                 // knows the actual argument whereas here we only know the type.
-                                let specialized_substs = self
-                                    .type_visitor()
-                                    .specialize_substs(substs, &self.callee_generic_argument_map);
+                                let specialized_substs =
+                                    self.type_visitor().specialize_generic_args(
+                                        args,
+                                        &self.callee_generic_argument_map,
+                                    );
                                 if !utils::are_concrete(specialized_substs) {
                                     // The clone method will not resolve, but we don't want visit_caller
                                     // to issue a diagnostic because is_zero might refine to true
@@ -942,7 +943,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                             .bv
                             .cv
                             .session
-                            .struct_span_warn(span, msg.as_ref());
+                            .struct_span_warn(span, msg.to_string());
                         self.block_visitor.bv.emit_diagnostic(warning);
                     } else {
                         // If we see an unconditional panic inside a standard contract summary,
@@ -967,7 +968,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                                 .bv
                                 .cv
                                 .session
-                                .struct_span_warn(span, msg.as_str());
+                                .struct_span_warn(span, msg.to_string());
                             self.block_visitor.bv.emit_diagnostic(warning);
                         }
                         return;
@@ -1015,7 +1016,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                                 .bv
                                 .cv
                                 .session
-                                .struct_span_warn(span, msg.as_ref());
+                                .struct_span_warn(span, msg.to_string());
                             self.block_visitor.bv.emit_diagnostic(warning);
                         } else {
                             // Since the assertion occurs in code that is being used rather than
@@ -1090,7 +1091,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                             _ => {
                                 let warning = self.block_visitor.bv.cv.session.struct_span_warn(
                                     self.block_visitor.bv.current_span,
-                                    warning.as_ref(),
+                                    warning.to_string(),
                                 );
                                 self.block_visitor.bv.emit_diagnostic(warning);
                             }
@@ -1254,7 +1255,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                             );
                             // decl.ty is not type specialized
                             actual_argument_types[0] =
-                                tcx.mk_mut_ref(tcx.lifetimes.re_static, callee_ty);
+                                Ty::new_mut_ref(tcx, tcx.lifetimes.re_static, callee_ty);
                         }
                     }
                 }
@@ -1266,31 +1267,35 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
 
             // Get the generic argument map for the indirectly called function
             let generic_arguments = match callee_ty.kind() {
-                TyKind::Closure(_, substs) => Some(self.type_visitor().specialize_substs(
-                    substs.as_closure().substs,
+                TyKind::Closure(_, args) => Some(self.type_visitor().specialize_generic_args(
+                    args.as_closure().args,
                     &self.type_visitor().generic_argument_map,
                 )),
-                TyKind::Generator(_, substs, _) => Some(self.type_visitor().specialize_substs(
-                    substs.as_generator().substs,
+                TyKind::Generator(_, args, _) => Some(self.type_visitor().specialize_generic_args(
+                    args.as_generator().args,
                     &self.type_visitor().generic_argument_map,
                 )),
-                TyKind::FnDef(_, substs)
-                | TyKind::Alias(
-                    rustc_middle::ty::Opaque,
-                    rustc_middle::ty::AliasTy { substs, .. },
-                ) => Some(
-                    self.type_visitor()
-                        .specialize_substs(substs, &self.type_visitor().generic_argument_map),
-                ),
-                _ => self.block_visitor.bv.cv.substs_cache.get(&def_id).cloned(),
+                TyKind::FnDef(_, args)
+                | TyKind::Alias(rustc_middle::ty::Opaque, rustc_middle::ty::AliasTy { args, .. }) => {
+                    Some(
+                        self.type_visitor().specialize_generic_args(
+                            args,
+                            &self.type_visitor().generic_argument_map,
+                        ),
+                    )
+                }
+                _ => self
+                    .block_visitor
+                    .bv
+                    .cv
+                    .generic_args_cache
+                    .get(&def_id)
+                    .cloned(),
             };
 
-            let argument_map = if let Some(substs) = generic_arguments {
-                self.type_visitor().get_generic_arguments_map(
-                    def_id,
-                    substs,
-                    &actual_argument_types,
-                )
+            let argument_map = if let Some(args) = generic_arguments {
+                self.type_visitor()
+                    .get_generic_arguments_map(def_id, args, &actual_argument_types)
             } else {
                 None
             };
@@ -1505,7 +1510,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                     format!(
                         "the macro {} expects its first argument to be a reference to a non-reference value",
                         if checking_presence { "has_tag! " } else { "does_not_have_tag!" },
-                    ).as_str(),
+                    ),
                 );
                 self.block_visitor.bv.emit_diagnostic(warning);
             }

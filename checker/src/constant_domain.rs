@@ -13,8 +13,7 @@ use serde::{Deserialize, Serialize};
 
 use mirai_annotations::*;
 use rustc_hir::def_id::DefId;
-use rustc_middle::ty::subst::SubstsRef;
-use rustc_middle::ty::{Ty, TyCtxt};
+use rustc_middle::ty::{GenericArgsRef, Ty, TyCtxt};
 
 use crate::expression::{Expression, ExpressionType};
 use crate::known_names::{KnownNames, KnownNamesCache};
@@ -114,7 +113,7 @@ impl ConstantDomain {
     pub fn for_function<'a, 'tcx>(
         function_id: usize,
         def_id: DefId,
-        generic_args: Option<SubstsRef<'tcx>>,
+        generic_args: Option<GenericArgsRef<'tcx>>,
         tcx: TyCtxt<'tcx>,
         known_names_cache: &mut KnownNamesCache,
         summary_cache: &mut PersistentSummaryCache<'tcx>,
@@ -1260,7 +1259,7 @@ impl<'tcx> ConstantValueCache<'tcx> {
         &mut self,
         def_id: DefId,
         ty: Ty<'tcx>,
-        generic_args: Option<SubstsRef<'tcx>>,
+        generic_args: Option<GenericArgsRef<'tcx>>,
         tcx: TyCtxt<'tcx>,
         known_names_cache: &mut KnownNamesCache,
         summary_cache: &mut PersistentSummaryCache<'tcx>,

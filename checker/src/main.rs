@@ -26,15 +26,16 @@ use mirai::callbacks;
 use mirai::options::Options;
 use mirai::utils;
 use mirai_annotations::*;
-use rustc_session::config::ErrorOutputType;
-use rustc_session::early_error;
 use std::env;
 use std::path::Path;
 
 fn main() {
+    let early_error_handler =
+        rustc_session::EarlyErrorHandler::new(rustc_session::config::ErrorOutputType::default());
+
     // Initialize loggers.
     if env::var("RUSTC_LOG").is_ok() {
-        rustc_driver::init_rustc_env_logger();
+        rustc_driver::init_rustc_env_logger(&early_error_handler);
     }
     if env::var("MIRAI_LOG").is_ok() {
         let e = env_logger::Env::new()
@@ -45,7 +46,11 @@ fn main() {
 
     // Get any options specified via the MIRAI_FLAGS environment variable
     let mut options = Options::default();
-    let rustc_args = options.parse_from_str(&env::var("MIRAI_FLAGS").unwrap_or_default(), false);
+    let rustc_args = options.parse_from_str(
+        &env::var("MIRAI_FLAGS").unwrap_or_default(),
+        &early_error_handler,
+        false,
+    );
     info!("MIRAI options from environment: {:?}", options);
 
     // Let arguments supplied on the command line override the environment variable.
@@ -53,10 +58,8 @@ fn main() {
         .enumerate()
         .map(|(i, arg)| {
             arg.into_string().unwrap_or_else(|arg| {
-                early_error(
-                    ErrorOutputType::default(),
-                    &format!("Argument {i} is not valid Unicode: {arg:?}"),
-                )
+                early_error_handler
+                    .early_error(format!("Argument {i} is not valid Unicode: {arg:?}"))
             })
         })
         .collect::<Vec<_>>();
@@ -68,7 +71,7 @@ fn main() {
         args.remove(1);
     }
 
-    let mut rustc_command_line_arguments = options.parse(&args[1..], false);
+    let mut rustc_command_line_arguments = options.parse(&args[1..], &early_error_handler, false);
     info!("MIRAI options modified by command line: {:?}", options);
 
     rustc_driver::install_ice_hook(rustc_driver::DEFAULT_BUG_REPORT_URL, |_| ());

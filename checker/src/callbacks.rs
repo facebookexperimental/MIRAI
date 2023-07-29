@@ -18,6 +18,7 @@ use log_derive::*;
 use rustc_driver::Compilation;
 use rustc_interface::{interface, Queries};
 use rustc_middle::ty::TyCtxt;
+use rustc_session::EarlyErrorHandler;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter, Result};
@@ -97,6 +98,7 @@ impl rustc_driver::Callbacks for MiraiCallbacks {
     #[logfn(TRACE)]
     fn after_analysis<'tcx>(
         &mut self,
+        _early_error_handler: &EarlyErrorHandler,
         compiler: &interface::Compiler,
         queries: &'tcx Queries<'tcx>,
     ) -> Compilation {
@@ -160,7 +162,7 @@ impl MiraiCallbacks {
             known_names_cache: KnownNamesCache::create_cache_from_language_items(),
             options: &std::mem::take(&mut self.options),
             session: compiler.session(),
-            substs_cache: HashMap::new(),
+            generic_args_cache: HashMap::new(),
             summary_cache: PersistentSummaryCache::new(tcx, summary_store_path),
             tcx,
             test_run: self.test_run,
