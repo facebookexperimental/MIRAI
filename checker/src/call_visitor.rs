@@ -234,7 +234,6 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             };
             if let Some(Ok(Some(instance))) = resolved_instance {
                 let resolved_def_id = instance.def.def_id();
-                let tcx = tcx;
                 let has_mir = tcx.is_mir_available(resolved_def_id);
                 if !has_mir && self.callee_known_name == KnownNames::StdCloneClone {
                     return;

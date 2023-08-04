@@ -33,12 +33,15 @@ pub fn find_sysroot() -> String {
     let toolchain = option_env!("RUSTUP_TOOLCHAIN");
     match (home, toolchain) {
         (Some(home), Some(toolchain)) => format!("{home}/toolchains/{toolchain}"),
-        _ => option_env!("RUST_SYSROOT")
-            .expect(
-                "Could not find sysroot. Specify the RUST_SYSROOT environment variable, \
+        _ => match option_env!("RUST_SYSROOT") {
+            None => {
+                panic!(
+                    "Could not find sysroot. Specify the RUST_SYSROOT environment variable, \
                  or use rustup to set the compiler to use for Mirai",
-            )
-            .to_owned(),
+                )
+            }
+            Some(sys_root) => sys_root.to_owned(),
+        },
     }
 }
 
@@ -411,11 +414,10 @@ pub fn is_foreign_contract(tcx: TyCtxt<'_>, def_id: DefId) -> bool {
 
 #[logfn_inputs(TRACE)]
 fn push_component_name(component_data: DefPathData, target: &mut String) {
-    use std::ops::Deref;
     use DefPathData::*;
     match component_data {
         TypeNs(name) | ValueNs(name) | MacroNs(name) | LifetimeNs(name) => {
-            target.push_str(name.as_str().deref());
+            target.push_str(name.as_str());
         }
         _ => target.push_str(match component_data {
             CrateRoot => "crate_root",

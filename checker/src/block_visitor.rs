@@ -113,9 +113,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
         let mir::Statement { kind, source_info } = statement;
         self.bv.current_span = source_info.span;
         match kind {
-            mir::StatementKind::Assign(box (place, rvalue)) => {
-                self.visit_assign(place, rvalue.borrow())
-            }
+            mir::StatementKind::Assign(box (place, rvalue)) => self.visit_assign(place, rvalue),
             mir::StatementKind::ConstEvalCounter => (),
             mir::StatementKind::FakeRead(..) => assume_unreachable!(),
             mir::StatementKind::SetDiscriminant {
@@ -806,9 +804,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             for (path, val) in newly_discovered_paths.iter() {
                 paths_that_can_reach_functions.insert(path.clone());
                 let root = path.get_path_root().clone();
-                let entry = roots_that_can_reach_functions
-                    .entry(root)
-                    .or_insert_with(Vec::new);
+                let entry = roots_that_can_reach_functions.entry(root).or_default();
                 entry.push((path.clone(), val.clone()));
             }
             newly_discovered_paths.clear();
@@ -3514,8 +3510,6 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             self.bv.update_value_at(discr_path, discr_data.clone());
 
             if discr_has_data {
-                use std::ops::Deref;
-
                 // Obtains the name of this variant.
                 let name = {
                     let enum_def = ty.ty_adt_def().unwrap();
@@ -3531,7 +3525,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     Path::new_qualified(
                         target_path.clone(),
                         Rc::new(PathSelector::Downcast(
-                            Rc::from(name_str.deref()),
+                            Rc::from(name_str),
                             discr_index.as_usize(),
                             discr_data,
                         )),
@@ -4068,10 +4062,9 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 from_end: *from_end,
             },
             mir::ProjectionElem::Downcast(name, index) => {
-                use std::ops::Deref;
                 let name_str = match name {
                     None => Rc::from(format!("variant#{}", index.as_usize())),
-                    Some(name) => Rc::from(name.as_str().deref()),
+                    Some(name) => Rc::from(name.as_str()),
                 };
                 let tag_value = if let TyKind::Adt(def, _) = base_ty.kind() {
                     if def.is_enum() {

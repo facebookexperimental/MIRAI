@@ -526,7 +526,7 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'tcx> {
                             .clone();
                         self.typed_cache_table
                             .entry(typed_cache_key)
-                            .or_insert_with(HashMap::new)
+                            .or_default()
                             .entry(function_id)
                             .or_insert(summary)
                     };
@@ -647,7 +647,7 @@ impl<'a, 'tcx: 'a> PersistentSummaryCache<'tcx> {
                     CallSiteKey::new(func_args.clone(), initial_type_cache.clone());
                 self.typed_cache_table
                     .entry(typed_cache_key)
-                    .or_insert_with(HashMap::new)
+                    .or_default()
                     .insert(func_id, summary);
             } else {
                 self.typed_cache.insert(func_id, summary);
