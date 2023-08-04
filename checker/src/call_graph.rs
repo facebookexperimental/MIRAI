@@ -443,10 +443,7 @@ impl<'tcx> CallGraph<'tcx> {
     /// Add a dominance relationship to the call graph.
     /// Denotes that `defid1` is dominated by `defid2`.
     pub fn add_dom(&mut self, defid1: DefId, defid2: DefId) {
-        self.dominance
-            .entry(defid1)
-            .or_insert_with(HashSet::<DefId>::new)
-            .insert(defid2);
+        self.dominance.entry(defid1).or_default().insert(defid2);
     }
 
     /// Add a new EdgeType to the call graph's `edge_types`.

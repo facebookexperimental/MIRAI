@@ -142,7 +142,7 @@ impl<'tcx> TypeVisitor<'tcx> {
         match path_ty.kind() {
             TyKind::Closure(_, args) => {
                 if utils::are_concrete(args) {
-                    for (i, ty) in args.as_closure().upvar_tys().enumerate() {
+                    for (i, ty) in args.as_closure().upvar_tys().iter().enumerate() {
                         let var_type = ExpressionType::from(ty.kind());
                         let mut qualifier = path.clone();
                         if is_ref {
@@ -159,7 +159,7 @@ impl<'tcx> TypeVisitor<'tcx> {
                 }
             }
             TyKind::Generator(_, args, _) => {
-                for (i, ty) in args.as_generator().prefix_tys().enumerate() {
+                for (i, ty) in args.as_generator().prefix_tys().iter().enumerate() {
                     let var_type = ExpressionType::from(ty.kind());
                     let mut qualifier = path.clone();
                     if is_ref {
@@ -490,15 +490,15 @@ impl<'tcx> TypeVisitor<'tcx> {
                             TyKind::Closure(def_id, args) => {
                                 let closure_substs = args.as_closure();
                                 if closure_substs.is_valid() {
-                                    return closure_substs
+                                    return *closure_substs
                                         .upvar_tys()
-                                        .nth(*ordinal)
+                                        .get(*ordinal)
                                         .unwrap_or_else(|| {
                                             info!(
                                                 "closure field not found {:?} {:?}",
                                                 def_id, ordinal
                                             );
-                                            self.tcx.types.never
+                                            &self.tcx.types.never
                                         });
                                 }
                             }
@@ -518,16 +518,16 @@ impl<'tcx> TypeVisitor<'tcx> {
                                 // a sort of fat pointer?
                                 if let TyKind::Closure(def_id, args) = t.kind() {
                                     if utils::are_concrete(args) {
-                                        return args
+                                        return *args
                                             .as_closure()
                                             .upvar_tys()
-                                            .nth(*ordinal)
+                                            .get(*ordinal)
                                             .unwrap_or_else(|| {
                                                 info!(
                                                     "closure field not found {:?} {:?}",
                                                     def_id, ordinal
                                                 );
-                                                self.tcx.types.never
+                                                &self.tcx.types.never
                                             });
                                     }
                                 } else {

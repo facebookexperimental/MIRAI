@@ -140,7 +140,6 @@ impl KnownNamesCache {
     /// Uses information obtained from tcx to figure out which well known name (if any)
     /// this def id corresponds to.
     fn get_known_name_for(tcx: TyCtxt<'_>, def_id: DefId) -> KnownNames {
-        use std::ops::Deref;
         use DefPathData::*;
 
         let def_path = &tcx.def_path(def_id);
@@ -177,7 +176,7 @@ impl KnownNamesCache {
         let get_known_name_for_alloc_namespace = |mut def_path_data_iter: Iter<'_>| {
             if is_foreign_module(def_path_data_iter.next()) {
                 get_path_data_elem_name(def_path_data_iter.next())
-                    .map(|n| match n.as_str().deref() {
+                    .map(|n| match n.as_str() {
                         "__rust_alloc" => KnownNames::RustAlloc,
                         "__rust_alloc_zeroed" => KnownNames::RustAllocZeroed,
                         "__rust_dealloc" => KnownNames::RustDealloc,
@@ -192,7 +191,7 @@ impl KnownNamesCache {
 
         let get_known_name_for_clone_trait = |mut def_path_data_iter: Iter<'_>| {
             get_path_data_elem_name(def_path_data_iter.next())
-                .map(|n| match n.as_str().deref() {
+                .map(|n| match n.as_str() {
                     "clone" => KnownNames::StdCloneClone,
                     _ => KnownNames::None,
                 })
@@ -201,7 +200,7 @@ impl KnownNamesCache {
 
         let get_known_name_for_clone_namespace = |mut def_path_data_iter: Iter<'_>| {
             get_path_data_elem_name(def_path_data_iter.next())
-                .map(|n| match n.as_str().deref() {
+                .map(|n| match n.as_str() {
                     "Clone" => get_known_name_for_clone_trait(def_path_data_iter),
                     _ => KnownNames::None,
                 })
@@ -210,7 +209,7 @@ impl KnownNamesCache {
 
         let get_known_name_for_future_namespace = |mut def_path_data_iter: Iter<'_>| {
             get_path_data_elem_name(def_path_data_iter.next())
-                .map(|n| match n.as_str().deref() {
+                .map(|n| match n.as_str() {
                     "from_generator" => KnownNames::StdFutureFromGenerator,
                     _ => KnownNames::None,
                 })
@@ -220,7 +219,7 @@ impl KnownNamesCache {
         let get_known_name_for_instrinsics_foreign_namespace =
             |mut def_path_data_iter: Iter<'_>| {
                 get_path_data_elem_name(def_path_data_iter.next())
-                    .map(|n| match n.as_str().deref() {
+                    .map(|n| match n.as_str() {
                         "arith_offset" => KnownNames::StdIntrinsicsArithOffset,
                         "bitreverse" => KnownNames::StdIntrinsicsBitreverse,
                         "bswap" => KnownNames::StdIntrinsicsBswap,
@@ -296,7 +295,7 @@ impl KnownNamesCache {
                         get_known_name_for_instrinsics_foreign_namespace(def_path_data_iter)
                     } else {
                         get_path_data_elem_name(current_elem)
-                            .map(|n| match n.as_str().deref() {
+                            .map(|n| match n.as_str() {
                                 "copy" => KnownNames::StdIntrinsicsCopy,
                                 "copy_nonoverlapping" => {
                                     KnownNames::StdIntrinsicsCopyNonOverlapping
@@ -313,7 +312,7 @@ impl KnownNamesCache {
 
         let get_known_name_for_marker_namespace = |mut def_path_data_iter: Iter<'_>| {
             get_path_data_elem_name(def_path_data_iter.next())
-                .map(|n| match n.as_str().deref() {
+                .map(|n| match n.as_str() {
                     "PhantomData" => KnownNames::StdMarkerPhantomData,
                     _ => KnownNames::None,
                 })
@@ -322,7 +321,7 @@ impl KnownNamesCache {
 
         let get_known_name_for_mem_namespace = |mut def_path_data_iter: Iter<'_>| {
             get_path_data_elem_name(def_path_data_iter.next())
-                .map(|n| match n.as_str().deref() {
+                .map(|n| match n.as_str() {
                     "replace" => KnownNames::StdMemReplace,
                     _ => KnownNames::None,
                 })
@@ -331,9 +330,9 @@ impl KnownNamesCache {
 
         let get_known_name_for_ops_function_namespace = |mut def_path_data_iter: Iter<'_>| {
             get_path_data_elem_name(def_path_data_iter.next())
-                .map(|n| match n.as_str().deref() {
+                .map(|n| match n.as_str() {
                     "Fn" | "FnMut" | "FnOnce" => get_path_data_elem_name(def_path_data_iter.next())
-                        .map(|n| match n.as_str().deref() {
+                        .map(|n| match n.as_str() {
                             "call" => KnownNames::StdOpsFunctionFnCall,
                             "call_mut" => KnownNames::StdOpsFunctionFnMutCallMut,
                             "call_once" | "call_once_force" => {
@@ -349,7 +348,7 @@ impl KnownNamesCache {
 
         let get_known_name_for_ops_namespace = |mut def_path_data_iter: Iter<'_>| {
             get_path_data_elem_name(def_path_data_iter.next())
-                .map(|n| match n.as_str().deref() {
+                .map(|n| match n.as_str() {
                     "function" => get_known_name_for_ops_function_namespace(def_path_data_iter),
                     _ => KnownNames::None,
                 })
@@ -358,7 +357,7 @@ impl KnownNamesCache {
 
         let get_known_name_for_panicking_namespace = |mut def_path_data_iter: Iter<'_>| {
             get_path_data_elem_name(def_path_data_iter.next())
-                .map(|n| match n.as_str().deref() {
+                .map(|n| match n.as_str() {
                     "assert_failed" => KnownNames::StdPanickingAssertFailed,
                     "begin_panic" | "panic" => KnownNames::StdPanickingBeginPanic,
                     "begin_panic_fmt" | "panic_fmt" => KnownNames::StdPanickingBeginPanicFmt,
@@ -372,7 +371,7 @@ impl KnownNamesCache {
                 def_path_data_iter.next(),
             ) {
                 Some(0) => get_path_data_elem_name(def_path_data_iter.next())
-                    .map(|n| match n.as_str().deref() {
+                    .map(|n| match n.as_str() {
                         "write_bytes" => KnownNames::StdIntrinsicsWriteBytes,
                         _ => KnownNames::None,
                     })
@@ -382,7 +381,7 @@ impl KnownNamesCache {
 
         let get_known_name_for_ptr_namespace = |mut def_path_data_iter: Iter<'_>| {
             get_path_data_elem_name(def_path_data_iter.next())
-                .map(|n| match n.as_str().deref() {
+                .map(|n| match n.as_str() {
                     "swap_nonoverlapping" => KnownNames::StdPtrSwapNonOverlapping,
                     "mut_ptr" => get_known_name_for_ptr_mut_ptr_namespace(def_path_data_iter),
                     _ => KnownNames::None,
@@ -395,7 +394,7 @@ impl KnownNamesCache {
                 def_path_data_iter.next(),
             ) {
                 Some(0) => get_path_data_elem_name(def_path_data_iter.next())
-                    .map(|n| match n.as_str().deref() {
+                    .map(|n| match n.as_str() {
                         "memcmp" => KnownNames::StdSliceCmpMemcmp,
                         _ => KnownNames::None,
                     })
@@ -408,7 +407,7 @@ impl KnownNamesCache {
                 def_path_data_iter.next(),
             ) {
                 Some(2) => get_path_data_elem_name(def_path_data_iter.next())
-                    .map(|n| match n.as_str().deref() {
+                    .map(|n| match n.as_str() {
                         "call_once" | "call_once_force" => KnownNames::StdOpsFunctionFnOnceCallOnce,
                         _ => KnownNames::None,
                     })
@@ -421,7 +420,7 @@ impl KnownNamesCache {
                 def_path_data_iter.next(),
             ) {
                 Some(1) => get_path_data_elem_name(def_path_data_iter.next())
-                    .map(|n| match n.as_str().deref() {
+                    .map(|n| match n.as_str() {
                         "MIN_NON_ZERO_CAP" => KnownNames::AllocRawVecMinNonZeroCap,
                         _ => KnownNames::None,
                     })
@@ -431,7 +430,7 @@ impl KnownNamesCache {
 
         let get_known_name_for_slice_namespace = |mut def_path_data_iter: Iter<'_>| {
             get_path_data_elem_name(def_path_data_iter.next())
-                .map(|n| match n.as_str().deref() {
+                .map(|n| match n.as_str() {
                     "cmp" => get_known_name_for_slice_cmp_namespace(def_path_data_iter),
                     _ => KnownNames::None,
                 })
@@ -441,7 +440,7 @@ impl KnownNamesCache {
         //get_known_name_for_sync_namespace
         let get_known_name_for_sync_namespace = |mut def_path_data_iter: Iter<'_>| {
             get_path_data_elem_name(def_path_data_iter.next())
-                .map(|n| match n.as_str().deref() {
+                .map(|n| match n.as_str() {
                     "once" => get_known_name_for_sync_once_namespace(def_path_data_iter),
                     _ => KnownNames::None,
                 })
@@ -450,7 +449,7 @@ impl KnownNamesCache {
 
         let get_known_name_for_known_crate = |mut def_path_data_iter: Iter<'_>| {
             get_path_data_elem_name(def_path_data_iter.next())
-                .map(|n| match n.as_str().deref() {
+                .map(|n| match n.as_str() {
                     "alloc" => get_known_name_for_alloc_namespace(def_path_data_iter),
                     "clone" => get_known_name_for_clone_namespace(def_path_data_iter),
                     "future" => get_known_name_for_future_namespace(def_path_data_iter),
@@ -483,7 +482,7 @@ impl KnownNamesCache {
         };
 
         let crate_name = tcx.crate_name(def_id.krate);
-        match crate_name.as_str().deref() {
+        match crate_name.as_str() {
             "alloc" | "core" | "mirai_annotations" | "std" => {
                 get_known_name_for_known_crate(def_path_data_iter)
             }
