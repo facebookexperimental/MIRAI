@@ -34,6 +34,10 @@ You'll need to install MIRAI as described
 Then use `cargo mirai` to run MIRAI over your current package. This works much like `cargo check` but uses MIRAI rather
 than rustc to analyze the targets of your current package.
 
+`cargo mirai` does a top-down full-program path sensitive analysis of the 
+[entry points](https://github.com/facebookexperimental/MIRAI/blob/main/documentation/Overview.md#entry-points) of your 
+package. To analyze test functions instead, use `cargo mirai --tests`.
+
 This will likely produce some warnings. Some of these will be real issues (true positives) that you'll fix by changing
 the offending code. Other warnings will be due to limitations of MIRAI and you can silence them by adding annotations
 declared in this [crate](https://crates.io/crates/mirai-annotations).
