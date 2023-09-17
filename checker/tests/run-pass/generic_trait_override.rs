@@ -29,8 +29,7 @@ impl Tr<i32> for Foo {
 pub fn t1() {
     let foo = Foo { bar: 1 };
     verify!(foo.actual() == 1);
-    // todo: fix this
-    verify!(foo.actual() == 2); // ~ provably false verification condition
+    verify!(foo.actual() == 2); //~ provably false verification condition
 }
 
 pub fn main() {}
