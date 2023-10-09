@@ -3,14 +3,16 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use clap::{Arg, Command, ErrorKind};
+use clap::error::ErrorKind;
+use clap::parser::ValueSource;
+use clap::{Arg, Command};
 use itertools::Itertools;
 
 use mirai_annotations::*;
 use rustc_session::EarlyErrorHandler;
 
 /// Creates the clap::Command metadata for argument parsing.
-fn make_options_parser<'help>(running_test_harness: bool) -> Command<'help> {
+fn make_options_parser(running_test_harness: bool) -> Command {
     // We could put this into lazy_static! with a Mutex around, but we really do not expect
     // to construct this more then once per regular program run.
     let mut parser = Command::new("MIRAI")
@@ -18,50 +20,51 @@ fn make_options_parser<'help>(running_test_harness: bool) -> Command<'help> {
         .version("v1.1.7")
         .arg(Arg::new("single_func")
             .long("single_func")
-            .takes_value(true)
+            .num_args(1)
             .help("Focus analysis on the named function.")
             .long_help("Name is the simple name of a top-level crate function or a MIRAI summary key."))
         .arg(Arg::new("diag")
             .long("diag")
-            .possible_values(["default", "verify", "library", "paranoid"])
+            .num_args(1)
+            .value_parser(["default", "verify", "library", "paranoid"])
             .default_value("default")
             .help("Level of diagnostics.\n")
             .long_help("With `default`, false positives will be avoided where possible.\nWith 'verify' errors are reported for incompletely analyzed functions.\nWith `paranoid`, all possible errors will be reported.\n"))
         .arg(Arg::new("constant_time")
             .long("constant_time")
-            .takes_value(true)
+            .num_args(1)
             .help("Enable verification of constant-time security.")
             .long_help("Name is a top-level crate type"))
         .arg(Arg::new("body_analysis_timeout")
             .long("body_analysis_timeout")
-            .takes_value(true)
+            .num_args(1)
             .default_value("30")
             .help("The maximum number of seconds that MIRAI will spend analyzing a function body.")
             .long_help("The default is 30 seconds."))
         .arg(Arg::new("crate_analysis_timeout")
             .long("crate_analysis_timeout")
-            .takes_value(true)
+            .num_args(1)
             .default_value("240")
             .help("The maximum number of seconds that MIRAI will spend analyzing a function body.")
             .long_help("The default is 240 seconds."))
         .arg(Arg::new("statistics")
             .long("statistics")
-            .takes_value(false)
+            .num_args(0)
             .help("Just print out whether crates were analyzed, etc.")
             .long_help("Just print out whether crates were analyzed and how many diagnostics were produced for each crate."))
         .arg(Arg::new("call_graph_config")
             .long("call_graph_config")
-            .takes_value(true)
+            .num_args(1)
             .help("Path call graph config.")
             .long_help(r#"Path to a JSON file that configures call graph output. Please see the documentation for details (https://github.com/facebookexperimental/MIRAI/blob/main/documentation/CallGraph.md)."#))
         .arg(Arg::new("print_function_names")
             .long("print_function_names")
-            .takes_value(false)
+            .num_args(0)
             .help("Just print out the signatures of functions in the crate"));
     if running_test_harness {
         parser = parser.arg(Arg::new("test_only")
             .long("test_only")
-            .takes_value(false)
+            .num_args(0)
             .help("Focus analysis on #[test] methods.")
             .long_help("Only #[test] methods and their usage are analyzed. This must be used together with the rustc --test option."));
     }
@@ -169,11 +172,11 @@ impl Options {
             make_options_parser(running_test_harness).get_matches_from(mirai_args.iter())
         };
 
-        if matches.is_present("single_func") {
-            self.single_func = matches.value_of("single_func").map(|s| s.to_string());
+        if matches.contains_id("single_func") {
+            self.single_func = matches.get_one::<String>("single_func").cloned();
         }
-        if matches.is_present("diag") {
-            self.diag_level = match matches.value_of("diag").unwrap() {
+        if matches.contains_id("diag") {
+            self.diag_level = match matches.get_one::<String>("diag").unwrap().as_str() {
                 "default" => DiagLevel::Default,
                 "verify" => DiagLevel::Verify,
                 "library" => DiagLevel::Library,
@@ -181,26 +184,34 @@ impl Options {
                 _ => assume_unreachable!(),
             };
         }
-        if running_test_harness && matches.is_present("test_only") {
+        if running_test_harness
+            && !matches!(
+                matches.value_source("test_only"),
+                Some(ValueSource::DefaultValue)
+            )
+        {
             self.test_only = true;
             if self.diag_level != DiagLevel::Paranoid {
                 self.diag_level = DiagLevel::Library;
             }
         }
-        if matches.is_present("constant_time") {
-            self.constant_time_tag_name = matches.value_of("constant_time").map(|s| s.to_owned());
+        if matches.contains_id("constant_time") {
+            self.constant_time_tag_name = matches.get_one::<String>("constant_time").cloned();
         }
-        if matches.is_present("body_analysis_timeout") {
-            self.max_analysis_time_for_body = match matches.value_of("body_analysis_timeout") {
-                Some(s) => match s.parse::<u64>() {
-                    Ok(v) => v,
-                    Err(_) => handler.early_error("--body_analysis_timeout expects an integer"),
-                },
-                None => assume_unreachable!(),
-            }
+        if matches.contains_id("body_analysis_timeout") {
+            self.max_analysis_time_for_body =
+                match matches.get_one::<String>("body_analysis_timeout") {
+                    Some(s) => match s.parse::<u64>() {
+                        Ok(v) => v,
+                        Err(_) => handler.early_error("--body_analysis_timeout expects an integer"),
+                    },
+                    None => assume_unreachable!(),
+                }
         }
-        if matches.is_present("crate_analysis_timeout") {
-            self.max_analysis_time_for_crate = match matches.value_of("crate_analysis_timeout") {
+        if matches.contains_id("crate_analysis_timeout") {
+            self.max_analysis_time_for_crate = match matches
+                .get_one::<String>("crate_analysis_timeout")
+            {
                 Some(s) => match s.parse::<u64>() {
                     Ok(v) => v,
                     Err(_) => handler.early_error("--crate_analysis_timeout expects an integer"),
@@ -208,13 +219,19 @@ impl Options {
                 None => assume_unreachable!(),
             }
         }
-        if matches.is_present("statistics") {
+        if !matches!(
+            matches.value_source("statistics"),
+            Some(ValueSource::DefaultValue)
+        ) {
             self.statistics = true;
         }
-        if matches.is_present("call_graph_config") {
-            self.call_graph_config = matches.value_of("call_graph_config").map(|s| s.to_string());
+        if matches.contains_id("call_graph_config") {
+            self.call_graph_config = matches.get_one::<String>("call_graph_config").cloned();
         }
-        if matches.is_present("print_function_names") {
+        if !matches!(
+            matches.value_source("print_function_names"),
+            Some(ValueSource::DefaultValue)
+        ) {
             self.print_function_names = true;
         }
         args[rustc_args_start..].to_vec()
