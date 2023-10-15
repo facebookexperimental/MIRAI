@@ -353,7 +353,7 @@ impl Environment {
                                 // conditional on index == i
                                 let conditional_value = indices_are_equal
                                     .conditional_expression(value.clone(), v.clone());
-                                debug!("conditional_value {:?}", conditional_value);
+                                //debug!("conditional_value {:?}", conditional_value);
                                 self.strong_update_value_at(p.clone(), conditional_value);
                             }
                         }
