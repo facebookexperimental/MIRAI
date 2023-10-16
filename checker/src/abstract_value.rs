@@ -649,8 +649,7 @@ impl AbstractValue {
     pub fn make_from(expression: Expression, expression_size: u64) -> Rc<AbstractValue> {
         if expression_size > k_limits::MAX_EXPRESSION_SIZE {
             if expression_size < u64::MAX {
-                trace!("expression {:?}", expression);
-                debug!("expression abstracted");
+                debug!("expression abstracted:  {:?}", expression);
             }
             // If the expression gets too large, refining it gets expensive and composing it
             // into other expressions leads to exponential growth. We therefore need to abstract
@@ -1255,6 +1254,22 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                             return x.and(other);
                         }
                     }
+                }
+                // [if c { a } else { b } && c] -> a
+                Expression::ConditionalExpression {
+                    condition,
+                    consequent,
+                    ..
+                } if condition.eq(&other) => {
+                    return consequent.clone();
+                }
+                // [if c { a } else { b } && !c] -> b
+                Expression::ConditionalExpression {
+                    condition,
+                    alternate,
+                    ..
+                } if condition.eq(&other.logical_not()) => {
+                    return alternate.clone();
                 }
                 _ => (),
             }
@@ -2133,6 +2148,26 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 }
             }
         }
+        // [if c {d} else { (if c {e} else {f}) join (if c {g} else {h}) }] -> if c {d} else { (f join h)}
+        if let Expression::Join { left, right } = &alternate.expression {
+            match (&left.expression, &right.expression) {
+                (
+                    Expression::ConditionalExpression {
+                        condition: c1,
+                        alternate: g,
+                        ..
+                    },
+                    Expression::ConditionalExpression {
+                        condition: c2,
+                        alternate: h,
+                        ..
+                    },
+                ) if c1.eq(c2) && c1.eq(self) => {
+                    return self.conditional_expression(consequent.clone(), g.join(h.clone()));
+                }
+                _ => {}
+            }
+        }
 
         // [if (if c { x } else { y }) { if c { a } else { b }} else { d }] ->
         // if c { if x { a } else { d } } else { if y { b } else { d } }
@@ -2155,6 +2190,28 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                     let xad = x.conditional_expression(a.clone(), d.clone());
                     let ybd = y.conditional_expression(b.clone(), d.clone());
                     return c.conditional_expression(xad, ybd);
+                }
+            }
+        }
+
+        // [if c { if (if c { a } else { b }) { x } else { y } } else { z }] -> if c { if a { x } else { y }} else {z}
+        if let Expression::ConditionalExpression {
+            condition: cab,
+            consequent: x,
+            alternate: y,
+        } = &consequent.expression
+        {
+            if let Expression::ConditionalExpression {
+                condition: c2,
+                consequent: a,
+                ..
+            } = &cab.expression
+            {
+                if self.eq(c2) {
+                    return self.conditional_expression(
+                        a.conditional_expression(x.clone(), y.clone()),
+                        alternate,
+                    );
                 }
             }
         }
@@ -4172,6 +4229,11 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 return self.clone();
             }
 
+            // [(x && y) || x] -> x
+            if other.inverse_implies_not(self) {
+                return other.clone();
+            }
+
             // [x || !(x && y)] -> true, etc.
             if self.inverse_implies(&other) {
                 return Rc::new(TRUE);
@@ -4525,6 +4587,14 @@ impl AbstractValueTrait for Rc<AbstractValue> {
                 // [(x && y) || y] -> y
                 (Expression::And { left: x, right: y }, _) if x.eq(&other) || y.eq(&other) => {
                     return other;
+                }
+
+                // [(x && y) || !x] -> x && y
+                // [(x && y) || !y] -> x && y
+                (Expression::And { left: x, right: y }, Expression::LogicalNot { operand: xy })
+                    if x.eq(xy) || y.eq(xy) =>
+                {
+                    return self.clone();
                 }
 
                 // [x || (x && y)] -> x
