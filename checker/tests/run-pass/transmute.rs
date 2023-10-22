@@ -120,7 +120,7 @@ pub unsafe fn t6() {
     let arr_ptr = std::mem::transmute::<&[i32], *const [i32]>(arr_ref);
     let fat_ptr = std::mem::transmute::<*const [i32], FatPtr<i32>>(arr_ptr);
     verify!(fat_ptr.fat == 3);
-    verify!(*fat_ptr.ptr == 1);
+    verify!(*fat_ptr.ptr == 1); //~ possible false verification condition
 }
 
 pub unsafe fn t7() {

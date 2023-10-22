@@ -73,6 +73,7 @@ impl<'tcx> TypeCache<'tcx> {
     }
 }
 
+#[derive(Clone)]
 pub struct TypeVisitor<'tcx> {
     pub actual_argument_types: Vec<Ty<'tcx>>,
     pub closures_being_specialized: RefCell<HashSet<DefId>>,
