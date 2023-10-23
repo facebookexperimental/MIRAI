@@ -1,4 +1,4 @@
-name: MIRAI on MIRAI
+name: Continuous Integration
 
 on:
   push:
@@ -7,50 +7,68 @@ on:
     branches: [ main ]
 
 jobs:
-  build_with_vcpkg_installed_z3:
-    strategy:
-      matrix:
-        build: [windows] # [linux, macos, windows]
-        include:
-          - build: linux
-            os: ubuntu-latest
-            vcpkg_triplet: x64-linux
-          - build: macos
-            os: macos-latest
-            vcpkg_triplet: x64-osx
-          - build: windows
-            os: windows-latest
-            vcpkg_triplet: x64-windows-static-md
-    runs-on: ${{ matrix.os }}
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3.5.2
+
+      - name: Run Clippy
+        run: |
+          cargo clippy --no-default-features --all-targets -- -D warnings
+
+  tests:
+    runs-on: macos-latest
     env:
       VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v3.5.2
         with:
           submodules: recursive
-      - name: Install LLVM and Clang # required for bindgen to work, see https://github.com/rust-lang/rust-bindgen/issues/1797
-        uses: KyleMayes/install-llvm-action@v1
-        if: matrix.os == 'windows-latest'
-        with:
-          version: "11.0"
-          directory: ${{ runner.temp }}/llvm
-      - name: Set LIBCLANG_PATH
-        run: echo "LIBCLANG_PATH=$((gcm clang).source -replace "clang.exe")" >> $env:GITHUB_ENV
-        if: matrix.os == 'windows-latest'
-      - run: echo  Installing z3:${{ matrix.vcpkg_triplet }} on ${{ matrix.os }}.
+
       - name: vcpkg build z3
         uses: johnwason/vcpkg-action@v5
         id: vcpkg
         with:
           pkgs: z3
-          triplet: ${{ matrix.vcpkg_triplet }}
-          cache-key: ${{ matrix.os }}
+          triplet: x64-osx
+          cache-key: macos-latest
           revision: master
           token: ${{ github.token }}
           extra-args: --clean-buildtrees-after-build
+
+      - name: Execute tests
+        run: |
+          cargo test --all -- --test-threads=1
+        env:
+          CARGO_INCREMENTAL: 0
+          RUSTFLAGS: "-Zprofile -Ccodegen-units=1 -Copt-level=0 -Clink-dead-code -Coverflow-checks=off -Zpanic_abort_tests"
+
+      - name: Setup grcov
+        run: |
+          cargo install grcov
+
+      - name: Run grcov
+        run: |
+          zip -0 cov.zip $(find . -name "mirai*.gc*" -print)
+          grcov cov.zip -s . -t lcov --llvm --ignore-not-existing --ignore "/*" -o lcov.info
+
+      - name: Upload coverage data to codecov.io
+        uses: codecov/codecov-action@v3
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: "lcov.info"
+
+  mirai_on_mirai_ubuntu:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3.5.2
+
       - name: Install MIRAI
         run: |
-          cargo install --force --path ./checker
+          cargo install --force --path ./checker --no-default-features --features static-link-z3
+
       - name: Run MIRAI on MIRAI
         run: |
-          cargo mirai
+          cargo mirai --no-default-features

@@ -49,7 +49,7 @@ shellwords = "*"
 sled = "*"
 tar = "0.4.38"
 tempfile = "*"
-z3-sys = { version = "*", git="https://github.com/prove-rs/z3.rs.git", features = ["vcpkg"], optional = true }
+z3-sys = { version = "*", git="https://github.com/prove-rs/z3.rs.git", optional = true }
 
 [dev-dependencies]
 walkdir = "*"
@@ -65,6 +65,6 @@ contracts = { version = "0.6.0", features = ["mirai_assertions"] }
 
 [features]
 default = ["z3"]
-z3 = ["dep:z3-sys"]
-
+z3 = ["z3-sys/vcpkg"]
+static-link-z3 = ["z3-sys/static-link-z3"]
 
