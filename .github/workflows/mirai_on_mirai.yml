@@ -50,7 +50,7 @@ jobs:
           extra-args: --clean-buildtrees-after-build
       - name: Install MIRAI
         run: |
-          cargo install --force --path ./checker
+          cargo install --force --path ./checker --no-default-features  --features="z3, use-vcpkg-z3"
       - name: Run MIRAI on MIRAI
         run: |
-          cargo mirai
+          cargo mirai --no-default-features
