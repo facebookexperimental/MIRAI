@@ -3416,7 +3416,11 @@ impl AbstractValueTrait for Rc<AbstractValue> {
     /// True if all possible concrete values are elements of the set corresponding to this domain.
     #[logfn_inputs(TRACE)]
     fn is_top(&self) -> bool {
-        matches!(&self.expression, Expression::Top)
+        match &self.expression {
+            Expression::Top => true,
+            Expression::Variable { path, .. } => path.is_top(),
+            _ => false,
+        }
     }
 
     /// True if this value is an empty tuple, which is the sole value of the unit type.

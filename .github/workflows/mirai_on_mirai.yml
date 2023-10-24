@@ -1,0 +1,56 @@
+name: MIRAI on MIRAI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build_with_vcpkg_installed_z3:
+    strategy:
+      matrix:
+        build: [macos, windows] #[linux, macos, windows]
+        include:
+#          - build: linux
+#            os: ubuntu-latest
+#            vcpkg_triplet: x64-linux
+          - build: macos
+            os: macos-latest
+            vcpkg_triplet: x64-osx
+          - build: windows
+            os: windows-latest
+            vcpkg_triplet: x64-windows-static-md
+    runs-on: ${{ matrix.os }}
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: recursive
+      - name: Install LLVM and Clang # required for bindgen to work, see https://github.com/rust-lang/rust-bindgen/issues/1797
+        uses: KyleMayes/install-llvm-action@v1
+        if: matrix.os == 'windows-latest'
+        with:
+          version: "11.0"
+          directory: ${{ runner.temp }}/llvm
+      - name: Set LIBCLANG_PATH
+        run: echo "LIBCLANG_PATH=$((gcm clang).source -replace "clang.exe")" >> $env:GITHUB_ENV
+        if: matrix.os == 'windows-latest'
+      - run: echo  Installing z3:${{ matrix.vcpkg_triplet }} on ${{ matrix.os }}.
+      - name: vcpkg build z3
+        uses: johnwason/vcpkg-action@v5
+        id: vcpkg
+        with:
+          pkgs: z3
+          triplet: ${{ matrix.vcpkg_triplet }}
+          cache-key: ${{ matrix.os }}
+          revision: master
+          token: ${{ github.token }}
+          extra-args: --clean-buildtrees-after-build
+      - name: Install MIRAI
+        run: |
+          cargo install --force --path ./checker --no-default-features  --features="z3, use-vcpkg-z3"
+      - name: Run MIRAI on MIRAI
+        run: |
+          cargo mirai --no-default-features

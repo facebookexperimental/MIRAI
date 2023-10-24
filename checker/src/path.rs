@@ -506,6 +506,13 @@ impl Path {
         }
     }
 
+    pub fn is_top(&self) -> bool {
+        match &self.value {
+            PathEnum::Computed { value } => value.is_top(),
+            _ => false,
+        }
+    }
+
     // Returns the length of the path.
     #[logfn_inputs(TRACE)]
     pub fn path_length(&self) -> usize {

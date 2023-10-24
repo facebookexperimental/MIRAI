@@ -835,6 +835,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
             return environment;
         }
         trace!("def_id {:?}", self.tcx.def_kind(self.def_id));
+        let saved_type_visitor = self.type_visitor.clone();
         let saved_mir = self.mir;
         let saved_def_id = self.def_id;
         for (ordinal, constant_mir) in self.tcx.promoted_mir(self.def_id).iter().enumerate() {
@@ -917,7 +918,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
         }
         self.def_id = saved_def_id;
         self.mir = saved_mir;
-        self.type_visitor_mut().mir = saved_mir;
+        *self.type_visitor_mut() = saved_type_visitor;
         environment
     }
 
