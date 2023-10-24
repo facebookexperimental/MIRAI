@@ -6,6 +6,12 @@
 
 # Exit immediately if a command exits with a non-zero status.
 set -e
+
+# Check if dynamic link to vcpkg installed Z3 is wanted rather than static linking
+if [ "$1" == "vcpkg" ]; then
+  FLAGS='--no-default-features --features=vcpkg'
+fi
+
 # start clean
 cargo clean
 cargo update
@@ -30,12 +36,12 @@ cd ../../..
 
 # Run cargo test, starting clean so that the new summary store is used.
 cargo clean
-cargo build --tests
-time cargo test
+cargo build --tests $FLAGS
+time cargo test $FLAGS
 
 # Install MIRAI into cargo so that we can use optimized binaries to analyze debug binaries built with special flags
 cargo uninstall mirai || true
-cargo install --path ./checker
+cargo install --path ./checker $FLAGS
 
 # Run mirai on itself, using the optimized build in cargo as the bootstrap.
 cargo clean -p mirai

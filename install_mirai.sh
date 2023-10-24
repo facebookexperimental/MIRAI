@@ -12,5 +12,11 @@ set -e
 #install mirai into cargo
 cargo uninstall -q mirai || true
 touch checker/src/lib.rs
-cargo install --locked --path ./checker
+
+# Check if dynamic link to vcpkg installed Z3 is wanted rather than static linking
+if [ "$1" == "vcpkg" ]; then
+  cargo install --locked --path ./checker --no-default-features --features=vcpkg
+else
+  cargo install --locked --path ./checker
+fi
 
