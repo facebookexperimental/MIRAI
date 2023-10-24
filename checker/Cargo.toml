@@ -64,8 +64,8 @@ walkdir = "*"
 contracts = { version = "0.6.0", features = ["mirai_assertions"] }
 
 [features]
-default = ["z3", "static-link-z3"]
-use-vcpkg-z3 = ["z3-sys/vcpkg"]
-static-link-z3 = ["z3-sys/static-link-z3"]
+default = ["static-link"]
+vcpkg = ["z3-sys/vcpkg", "z3"]
+static-link = ["z3-sys/static-link-z3", "z3"]
 z3 = []
 

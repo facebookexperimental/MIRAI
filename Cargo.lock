@@ -1206,7 +1206,7 @@ dependencies = [
 [[package]]
 name = "z3-sys"
 version = "0.8.1"
-source = "git+https://github.com/prove-rs/z3.rs.git#1335297b447a281ba90497481865e31b48c40508"
+source = "git+https://github.com/prove-rs/z3.rs.git#8eea45394f314eb0c26697e095d68cc00d8bcb90"
 dependencies = [
  "bindgen",
  "cmake",
