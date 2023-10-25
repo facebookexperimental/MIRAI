@@ -10,7 +10,7 @@ jobs:
   clippy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3.5.2
+      - uses: actions/checkout@v4
 
       - name: Run Clippy
         run: |
@@ -22,7 +22,7 @@ jobs:
       VCPKG_ROOT: ${{ github.workspace }}/vcpkg
 
     steps:
-      - uses: actions/checkout@v3.5.2
+      - uses: actions/checkout@v4
         with:
           submodules: recursive
 
@@ -63,7 +63,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3.5.2
+      - uses: actions/checkout@v4
 
       - name: Install MIRAI
         run: |
