@@ -225,6 +225,7 @@ impl KnownNamesCache {
                         "bswap" => KnownNames::StdIntrinsicsBswap,
                         "ceilf32" => KnownNames::StdIntrinsicsCeilf32,
                         "ceilf64" => KnownNames::StdIntrinsicsCeilf64,
+                        "compare_bytes" => KnownNames::StdSliceCmpMemcmp,
                         "copysignf32" => KnownNames::StdIntrinsicsCopysignf32,
                         "copysignf64" => KnownNames::StdIntrinsicsCopysignf64,
                         "cosf32" => KnownNames::StdIntrinsicsCosf32,

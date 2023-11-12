@@ -388,7 +388,7 @@ pub fn summary_key_str(tcx: TyCtxt<'_>, def_id: DefId) -> Rc<str> {
                     | DefKind::Union
                     | DefKind::Enum
                     | DefKind::Variant
-                    | DefKind::TyAlias
+                    | DefKind::TyAlias { .. }
                     | DefKind::Impl { .. },
             ) {
                 name.push('_');

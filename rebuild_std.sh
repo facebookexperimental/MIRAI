@@ -9,7 +9,7 @@
 # Exit immediately if a command exits with a non-zero status.
 set -e
 
-cargo build
+cargo build --no-default-features
 
 # build the mirai-standard-contracts crate
 touch standard_contracts/src/lib.rs
