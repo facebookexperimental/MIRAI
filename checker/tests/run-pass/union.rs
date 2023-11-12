@@ -6,8 +6,6 @@
 
 // A test that checks that a value is tracked through a union.
 
-#![feature(allow_internal_unstable)]
-
 use mirai_annotations::*;
 
 pub const fn as_bytes(_self: &str) -> &[u8] {

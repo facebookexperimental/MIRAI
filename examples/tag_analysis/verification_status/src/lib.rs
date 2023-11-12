@@ -76,7 +76,7 @@ pub mod unverified_objects {
 }
 
 pub mod verified_objects {
-    pub fn tes_verified_msg() {
+    pub fn test_verified_msg() {
         let sender = crate::NetworkSender::new("Alice".to_owned());
         let msg = crate::VoteMsg::new(122, true);
         if let Some(()) = msg.verify() {
