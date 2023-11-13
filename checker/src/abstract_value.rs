@@ -2104,6 +2104,14 @@ impl AbstractValueTrait for Rc<AbstractValue> {
             return self.and(consequent);
         }
         if let Expression::Or { left: x, right: y } = &self.expression {
+            if alternate.as_bool_if_known().unwrap_or_default() {
+                if let Expression::LogicalNot { operand: x1 } = &x.expression {
+                    if y.eq(&consequent) {
+                        // [if (!x1 || y) { y } else { true } -> x1 || y
+                        return x1.or(y.clone());
+                    }
+                }
+            }
             match &consequent.expression {
                 Expression::LogicalNot { operand } if x.eq(operand) => {
                     // [if x || y { !x } else { z }] -> [!x && y || !x && z] -> !x && (y || z)

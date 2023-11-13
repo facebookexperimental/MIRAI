@@ -13,9 +13,12 @@ use std::io::{Cursor, Read, Result};
 pub fn t1(buf: &[u8]) -> Result<()> {
     let mut reader = Cursor::new(buf);
     let mut v = Vec::with_capacity(1);
-    reader.read_to_end(&mut v)?;
     // todo: fix this
-    //verify!(v.len() == 0); // ~ possible false verification condition
+    reader.read_to_end(&mut v)?; //~ slice index starts at after slice end
+                                 //~ related location
+                                 //~ related location
+                                 // todo: fix this
+                                 //verify!(v.len() == 0); // ~ possible false verification condition
     Ok(())
 }
 
