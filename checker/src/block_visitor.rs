@@ -14,8 +14,8 @@ use mirai_annotations::*;
 use rustc_hir::def_id::DefId;
 use rustc_index::{Idx, IndexVec};
 use rustc_middle::mir;
-use rustc_middle::mir::interpret::{alloc_range, ConstValue, GlobalAlloc, Scalar};
-use rustc_middle::mir::UnwindTerminateReason;
+use rustc_middle::mir::interpret::{alloc_range, GlobalAlloc, Scalar};
+use rustc_middle::mir::{ConstValue, UnwindTerminateReason};
 use rustc_middle::ty::adjustment::PointerCoercion;
 use rustc_middle::ty::layout::LayoutCx;
 use rustc_middle::ty::{
@@ -1735,9 +1735,9 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 self.visit_used_move(path, place);
             }
             mir::Operand::Constant(constant) => {
-                let mir::Constant { literal, .. } = constant.borrow();
-                let rh_type = literal.ty();
-                let const_value = self.visit_literal(literal);
+                let mir::ConstOperand { const_, .. } = constant.borrow();
+                let rh_type = const_.ty();
+                let const_value = self.visit_literal(const_);
                 if const_value.expression.infer_type() == ExpressionType::NonPrimitive {
                     match &const_value.expression {
                         Expression::Bottom | Expression::Top => {
@@ -2641,8 +2641,8 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 .type_visitor()
                 .get_rustc_place_type(place, self.bv.current_span),
             mir::Operand::Constant(constant) => {
-                let mir::Constant { literal, .. } = constant.borrow();
-                literal.ty()
+                let mir::ConstOperand { const_, .. } = constant.borrow();
+                const_.ty()
             }
         }
     }
@@ -2655,8 +2655,8 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             mir::Operand::Copy(place) => self.visit_copy(place),
             mir::Operand::Move(place) => self.visit_move(place),
             mir::Operand::Constant(constant) => {
-                let mir::Constant { literal, .. } = constant.borrow();
-                self.visit_literal(literal)
+                let mir::ConstOperand { const_, .. } = constant.borrow();
+                self.visit_literal(const_)
             }
         }
     }
@@ -2690,14 +2690,14 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
 
     /// Returns a value that corresponds to the given literal
     #[logfn_inputs(TRACE)]
-    pub fn visit_literal(&mut self, literal: &mir::ConstantKind<'tcx>) -> Rc<AbstractValue> {
+    pub fn visit_literal(&mut self, literal: &mir::Const<'tcx>) -> Rc<AbstractValue> {
         match literal {
             // This constant came from the type system
-            mir::ConstantKind::Ty(c) => self.visit_const(c),
+            mir::Const::Ty(c) => self.visit_const(c),
             // An unevaluated mir constant which is not part of the type system.
-            mir::ConstantKind::Unevaluated(c, ty) => self.visit_unevaluated_const(c, *ty),
+            mir::Const::Unevaluated(c, ty) => self.visit_unevaluated_const(c, *ty),
             // This constant contains something the type system cannot handle (e.g. pointers).
-            mir::ConstantKind::Val(v, ty) => self.visit_const_value(*v, *ty),
+            mir::Const::Val(v, ty) => self.visit_const_value(*v, *ty),
         }
     }
 
@@ -3058,37 +3058,35 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             ConstValue::ZeroSized => self.get_constant_value_from_scalar(lty, 0, 0),
 
             // Used only for `&[u8]` and `&str`
-            ConstValue::Slice { data, start, end } => {
-                assume!(end > start); // The Rust compiler should ensure this.
-                let size = end - start;
+            ConstValue::Slice { data, meta } => {
+                let size = rustc_target::abi::Size::from_bytes(meta);
                 let bytes = data
                     .inner()
                     .get_bytes_strip_provenance(
                         &self.bv.tcx,
-                        alloc_range(
-                            rustc_target::abi::Size::from_bytes(start as u64),
-                            rustc_target::abi::Size::from_bytes(size as u64),
-                        ),
+                        alloc_range(rustc_target::abi::Size::ZERO, size),
                     )
                     .unwrap();
-                let slice = &bytes[start..end];
+                let slice = &bytes[0..];
                 match lty.kind() {
                     // todo: is this case possible? The comment suggests not.
                     TyKind::Array(elem_type, length) => {
                         let length = self.bv.get_array_length(length);
-                        let (array_value, array_path) = self.get_heap_array_and_path(lty, size);
+                        let (array_value, array_path) =
+                            self.get_heap_array_and_path(lty, size.bytes() as usize);
                         self.deserialize_constant_array(array_path, bytes, length, *elem_type);
                         array_value
                     }
                     TyKind::Ref(_, t, _) if matches!(t.kind(), TyKind::Slice(..)) => {
                         let elem_type = self.type_visitor().get_element_type(*t);
-                        let bytes_per_elem = self.type_visitor().get_type_size(elem_type) as usize;
-                        let length = size / bytes_per_elem;
-                        let (_, array_path) = self.get_heap_array_and_path(*t, size);
+                        let bytes_per_elem = self.type_visitor().get_type_size(elem_type);
+                        let length = size.bytes() / bytes_per_elem;
+                        let (_, array_path) =
+                            self.get_heap_array_and_path(*t, size.bytes() as usize);
                         self.deserialize_constant_array(
                             array_path.clone(),
                             bytes,
-                            length,
+                            length as usize,
                             elem_type,
                         );
                         AbstractValue::make_reference(array_path)

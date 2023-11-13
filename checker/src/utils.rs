@@ -260,8 +260,8 @@ fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: TyCtxt<'tcx>) 
                 }
             }
         }
-        TyKind::GeneratorWitness(binder) => {
-            for ty in binder.skip_binder().iter() {
+        TyKind::GeneratorWitness(_def_id, subs) => {
+            for ty in subs.types() {
                 str.push('_');
                 append_mangled_type(str, ty, tcx)
             }

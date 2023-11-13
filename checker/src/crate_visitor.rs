@@ -230,7 +230,7 @@ impl<'compilation, 'tcx> CrateVisitor<'compilation, 'tcx> {
                         mir::Rvalue::Use(mir::Operand::Constant(box ref con)),
                     )) = s.kind
                     {
-                        if let mir::ConstantKind::Unevaluated(c, _) = con.literal {
+                        if let mir::Const::Unevaluated(c, _) = con.const_ {
                             result.push(utils::def_id_display_name(self.tcx, c.def));
                         }
                     }

@@ -1244,16 +1244,9 @@ impl<'tcx> TypeVisitor<'tcx> {
                 self.specialize_generic_args(args, map),
                 *movability,
             ),
-            TyKind::GeneratorWitness(bound_types) => {
-                let map_types = |types: &rustc_middle::ty::List<Ty<'tcx>>| {
-                    self.tcx.mk_type_list_from_iter(
-                        types
-                            .iter()
-                            .map(|ty| self.specialize_generic_argument_type(ty, map)),
-                    )
-                };
-                let specialized_types = bound_types.map_bound(map_types);
-                Ty::new_generator_witness(self.tcx, specialized_types)
+            TyKind::GeneratorWitness(def_id, args) => {
+                let specialized_types = self.specialize_generic_args(args, map);
+                Ty::new_generator_witness(self.tcx, *def_id, specialized_types)
             }
             TyKind::Tuple(types) => Ty::new_tup_from_iter(
                 self.tcx,
