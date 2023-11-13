@@ -15,6 +15,7 @@ use rustc_hir::def_id::DefId;
 use rustc_index::{Idx, IndexVec};
 use rustc_middle::mir;
 use rustc_middle::mir::interpret::{alloc_range, ConstValue, GlobalAlloc, Scalar};
+use rustc_middle::mir::UnwindTerminateReason;
 use rustc_middle::ty::adjustment::PointerCoercion;
 use rustc_middle::ty::layout::LayoutCx;
 use rustc_middle::ty::{
@@ -289,8 +290,8 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             mir::TerminatorKind::SwitchInt { discr, targets } => {
                 self.visit_switch_int(discr, discr.ty(self.bv.mir, self.bv.tcx), targets)
             }
-            mir::TerminatorKind::Resume => self.visit_resume(),
-            mir::TerminatorKind::Terminate => self.visit_terminate(),
+            mir::TerminatorKind::UnwindResume => self.visit_unwind_resume(),
+            mir::TerminatorKind::UnwindTerminate(reason) => self.visit_unwind_terminate(reason),
             mir::TerminatorKind::Return => self.visit_return(),
             mir::TerminatorKind::Unreachable => self.visit_unreachable(),
             mir::TerminatorKind::Drop {
@@ -425,12 +426,12 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
     /// Indicates that the landing pad is finished and unwinding should
     /// continue. Emitted by build::scope::diverge_cleanup.
     #[logfn_inputs(TRACE)]
-    fn visit_resume(&self) {}
+    fn visit_unwind_resume(&self) {}
 
     /// Indicates that the landing pad is finished and that the process
     /// should terminate. Used to prevent unwinding for foreign items.
     #[logfn_inputs(TRACE)]
-    fn visit_terminate(&self) {}
+    fn visit_unwind_terminate(&self, _reason: &UnwindTerminateReason) {}
 
     /// Indicates a normal return. The return place should have
     /// been filled in by now. This should occur at most once.
