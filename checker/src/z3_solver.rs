@@ -1952,14 +1952,17 @@ impl Z3Solver {
         let right_bv = self.get_as_bv_z3_ast(&right.expression, num_bits);
         unsafe {
             let does_not_overflow = no_overflow(self.z3_context, left_bv, right_bv, is_signed);
-            if is_signed {
+            let overflows = if is_signed {
                 let does_not_underflow = no_underflow(self.z3_context, left_bv, right_bv);
                 let tmp = vec![does_not_overflow, does_not_underflow];
                 let stays_in_range = z3_sys::Z3_mk_and(self.z3_context, 2, tmp.as_ptr());
                 z3_sys::Z3_mk_not(self.z3_context, stays_in_range)
             } else {
                 z3_sys::Z3_mk_not(self.z3_context, does_not_overflow)
-            }
+            };
+            let bv_true = self.bv_constant(num_bits, &ConstantDomain::True);
+            let bv_false = self.bv_constant(num_bits, &ConstantDomain::False);
+            z3_sys::Z3_mk_ite(self.z3_context, overflows, bv_true, bv_false)
         }
     }
 
