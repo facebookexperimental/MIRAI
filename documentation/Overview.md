@@ -67,8 +67,8 @@ this might mean that only unit tests will be analyzed, so there is one more reas
 
 ## Reducing false positives
 
-False positives are diagnostics that point out execution paths that terminate abruptly, which seems like bugs but are
-not, because the execution paths that will never actually be executed. This does not mean that MIRAI is unable to detect
+False positives are diagnostics that point out execution paths that terminate abruptly, which seem like bugs but are
+not, because the execution paths will never actually be executed. This does not mean that MIRAI is unable to detect
 dead code branches, but rather that an abruptly terminating code path might be alive only if the function is called
 with particular values for its parameters. For example, with None, rather than Some(x).
 
@@ -224,7 +224,7 @@ It is actually somewhat rare for classical abstract domains values to be compute
 and the usual question to ask an abstract value is simply: are you always true or always false? If need be, this question
 is answered by translating the abstract value's expression to a predicate for an SMT solver such as Z3. Most often,
 the question is answered without resorting to the solver because expressions are algebraically simplified as they
-are constructed. During simplification, other questions may be asked and this might involved classical abstract domains.
+are constructed. During simplification, other questions may be asked and this might involve classical abstract domains.
 
 Algebraic simplifications are a significant source of complexity for MIRAI, but simplification is the key strategy
 for warding off exponential increases in expression size (along with widening). The simplifications are heuristic in
@@ -278,9 +278,9 @@ difficulties with analyzing recursive functions.
 The analyzer therefore analyzes functions without knowledge of the call site specific argument values, and then caches
 a summary of the analysis. The summaries are computed on demand, but once cached, a call site only has to specialize
 the abstract summary with respect to the local environment. This cuts down on exponential costs because any fixed
-point computations done during the analysis a called function does not need to get repeated at the call site.
+point computations done during the analysis of a called function does not need to get repeated at the call site.
 
-A summary is a list of preconditions that need to be true at the call site in order to the summarized function to not
+A summary is a list of preconditions that need to be true at the call site in order for the summarized function to not
 panic, an abstract return value, a list of side-effects, and a post-condition.
 
 ## Call resolution
@@ -314,7 +314,7 @@ Option<T> where T is not known. This is obviously a problem when T is a trait wi
 giving up on analyzing the function is not an option either because the call site might actually always pass in None, and
 thus never trigger the path with the unresolvable call.
 
-The approached used to deal with to these hard problems is to infer preconditions that preclude the unresolvable calls
+The approach used to deal with these hard problems is to infer preconditions that preclude the unresolvable calls
 from being reached, as already discussed 
 [above](https://github.com/facebookexperimental/MIRAI/blob/main/documentation/Overview.md#incomplete-analysis).
 
@@ -340,7 +340,7 @@ todo: provide a link to a detailed discussion of naming conventions.
 ## Path conditions
 
 In order to determine whether an instruction causing an abrupt termination is in fact reachable from an analysis root,
-MIRAI needs to track a condition that needs to be true in order to execution to reach the abrupt termination.
+MIRAI needs to track a condition that needs to be true in order for execution to reach the abrupt termination.
 
 In the absences of loops, this is relatively straight forward: every basic block, other than block 0, is reachable only
 if another block explicitly branches to it. So, starting with a path condition of true for block 0, every other block
