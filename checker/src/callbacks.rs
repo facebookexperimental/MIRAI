@@ -98,7 +98,6 @@ impl rustc_driver::Callbacks for MiraiCallbacks {
     #[logfn(TRACE)]
     fn after_analysis<'tcx>(
         &mut self,
-        _early_error_handler: &EarlyErrorHandler,
         compiler: &interface::Compiler,
         queries: &'tcx Queries<'tcx>,
     ) -> Compilation {
