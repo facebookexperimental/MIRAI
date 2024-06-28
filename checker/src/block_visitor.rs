@@ -3117,10 +3117,11 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             ConstValue::Indirect {
                 // The backing memory of the value, may contain more memory than needed for just the value
                 // in order to share `ConstAllocation`s between values
-                alloc,
+                alloc_id,
                 // Offset into `alloc`
                 offset,
             } => {
+                let alloc = self.bv.tcx.global_alloc(alloc_id).unwrap_memory();
                 let alloc_len = alloc.inner().len();
                 let offset_bytes = offset.bytes() as usize;
                 // The Rust compiler should ensure this.

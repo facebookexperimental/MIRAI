@@ -14,7 +14,7 @@ fi
 
 # start clean
 cargo clean
-cargo update
+#cargo update
 # Run format checks
 cargo fmt --all
 # Run lint checks
