@@ -1139,7 +1139,10 @@ impl Z3Solver {
             Expression::TaggedExpression { operand, .. } => {
                 self.get_as_numeric_z3_ast(&operand.expression)
             }
-            Expression::Transmute { operand, target_type } => {
+            Expression::Transmute {
+                operand,
+                target_type,
+            } => {
                 if target_type.is_integer() || target_type.is_floating_point_number() {
                     self.numeric_cast(&operand.expression, *target_type)
                 } else {

@@ -29,7 +29,7 @@ doctest = false # and no doc tests
 [dependencies]
 bincode = { version = "*", features = ["i128"] }
 cargo_metadata = "*"
-clap = "*"
+clap = "=4.4.8"
 env_logger = "*"
 fs2 = "*"
 itertools = "*"
@@ -43,13 +43,14 @@ rayon = "*"
 regex = "1.5.6"
 rpds = { version = "*", features = ["serde"] }
 rustc_tools_util = "*"
-serde = { version = "*", features = ["derive", "alloc", "rc"] }
+serde = { version = "=1.0.192", features = ["derive", "alloc", "rc"] }
 serde_json = "*"
 shellwords = "*"
 sled = "*"
 tar = "0.4.38"
 tempfile = "*"
-z3-sys = { version = "*", git="https://github.com/prove-rs/z3.rs.git", optional = true }
+triomphe = "=0.1.9"
+z3-sys = { version = "*", git = "https://github.com/prove-rs/z3.rs.git", rev = "cb7b79a61433673a5e6b07559cc661a97b5a84cf", optional = true }
 
 [dev-dependencies]
 walkdir = "*"
@@ -59,7 +60,7 @@ walkdir = "*"
 # of the cargo command using it, e.g.
 # `--extern contracts=$PROJECT_DIR$/target/debug/deps/libcontracts-c8ea818f33e46907.dylib`
 # or similar, and to integration_tests.rs (search for extern_deps there).
-# We set the dep to a specific revision so we don't get paths as above not longer working after update of the repo
+# We set the dep to a specific revision, so we don't get paths as above no longer working after update of the repo
 # and the Cargo.lock.
 contracts = { version = "0.6.0", features = ["mirai_assertions"] }
 

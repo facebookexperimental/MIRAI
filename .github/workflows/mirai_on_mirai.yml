@@ -10,14 +10,14 @@ jobs:
   build_with_vcpkg_installed_z3:
     strategy:
       matrix:
-        build: [linux, macos, windows]
+        build: [ linux, macos, windows ]
         include:
           - build: linux
             os: ubuntu-latest
             vcpkg_triplet: x64-linux
           - build: macos
             os: macos-latest
-            vcpkg_triplet: x64-osx
+            vcpkg_triplet: arm64-osx
           - build: windows
             os: windows-latest
             vcpkg_triplet: x64-windows-static-md
