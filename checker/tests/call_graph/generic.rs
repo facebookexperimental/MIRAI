@@ -62,8 +62,7 @@ commit;
 
 */
 
-/* EXPECTED:CALL_SITES
-{
+/* EXPECTED:CALL_SITES{
   "files": [
     "tests/call_graph/generic.rs"
   ],
@@ -75,13 +74,13 @@ commit;
       "local": true
     },
     {
-      "name": "/generic/Gen::<T>::bar(&Gen<T>,T)->()",
+      "name": "/generic/Gen::<T>::bar(&ReLateBound(DebruijnIndex(0), BoundRegion { var: 0, kind: BrNamed(DefId(0:12 ~ generic[7907]::{impl#0}::bar::'_), '_) }) Adt(Gen, [T/#0]),T/#0)->()",
       "file_index": 0,
       "first_line": 14,
       "local": true
     },
     {
-      "name": "/generic/Gen::<T>::foo(U)->()",
+      "name": "/generic/Gen::<T>::foo(U/#1)->()",
       "file_index": 0,
       "first_line": 12,
       "local": true
@@ -103,5 +102,4 @@ commit;
       2
     ]
   ]
-}
-*/
+}*/

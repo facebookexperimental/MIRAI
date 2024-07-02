@@ -18,7 +18,6 @@ use log_derive::*;
 use rustc_driver::Compilation;
 use rustc_interface::{interface, Queries};
 use rustc_middle::ty::TyCtxt;
-use rustc_session::EarlyErrorHandler;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter, Result};
@@ -93,12 +92,11 @@ impl rustc_driver::Callbacks for MiraiCallbacks {
 
     /// Called after the compiler has completed all analysis passes and before it lowers MIR to LLVM IR.
     /// At this point the compiler is ready to tell us all it knows and we can proceed to do abstract
-    /// interpretation of all of the functions that will end up in the compiler output.
+    /// interpretation of all functions that will end up in the compiler output.
     /// If this method returns false, the compilation will stop.
     #[logfn(TRACE)]
     fn after_analysis<'tcx>(
         &mut self,
-        _early_error_handler: &EarlyErrorHandler,
         compiler: &interface::Compiler,
         queries: &'tcx Queries<'tcx>,
     ) -> Compilation {
