@@ -66,7 +66,7 @@ commit;
   ],
   "callables": [
     {
-      "name": "/fnptr_deduplicate/fn1(u32,&ReLateBound(DebruijnIndex(0), BoundRegion { var: 0, kind: BrNamed(DefId(0:7 ~ fnptr_deduplicate[2966]::fn1::'_), '_) }) Binder(fn(u32) -> u32, []))->u32",
+      "name": "/fnptr_deduplicate/fn1(u32,&ReLateBound(DebruijnIndex(0), BoundRegion { var: 0, kind: BrNamed(DefId(0:7 ~ fnptr_deduplicate[474a]::fn1::'_), '_) }) Binder(fn(u32) -> u32, []))->u32",
       "file_index": 0,
       "first_line": 10,
       "local": true

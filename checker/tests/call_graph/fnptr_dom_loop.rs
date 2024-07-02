@@ -85,7 +85,7 @@ commit;
   ],
   "callables": [
     {
-      "name": "/fnptr_dom_loop/fn1(u32,&ReLateBound(DebruijnIndex(0), BoundRegion { var: 0, kind: BrNamed(DefId(0:8 ~ fnptr_dom_loop[3bf9]::fn1::'_), '_) }) Binder(fn(u32) -> u32, []),&ReLateBound(DebruijnIndex(0), BoundRegion { var: 1, kind: BrNamed(DefId(0:9 ~ fnptr_dom_loop[3bf9]::fn1::'_#1), '_) }) Binder(fn(u32) -> u32, []))->u32",
+      "name": "/fnptr_dom_loop/fn1(u32,&ReLateBound(DebruijnIndex(0), BoundRegion { var: 0, kind: BrNamed(DefId(0:8 ~ fnptr_dom_loop[e24a]::fn1::'_), '_) }) Binder(fn(u32) -> u32, []),&ReLateBound(DebruijnIndex(0), BoundRegion { var: 1, kind: BrNamed(DefId(0:9 ~ fnptr_dom_loop[e24a]::fn1::'_#1), '_) }) Binder(fn(u32) -> u32, []))->u32",
       "file_index": 0,
       "first_line": 9,
       "local": true
