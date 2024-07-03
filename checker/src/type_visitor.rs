@@ -941,6 +941,7 @@ impl<'tcx> TypeVisitor<'tcx> {
                         }
                     }
                 }
+                mir::ProjectionElem::Subtype(ty) => *ty,
                 mir::ProjectionElem::OpaqueCast(ty) => *ty,
                 mir::ProjectionElem::Downcast(_, ordinal) => {
                     if let TyKind::Adt(def, args) = base_ty.kind() {
