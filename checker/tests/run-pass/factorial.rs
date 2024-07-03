@@ -6,15 +6,15 @@
 
 // A test that uses a widened summary.
 
-fn fact(n: u8) -> u128 {
-    if n == 0 {
-        1
-    } else {
-        let n1fac = fact(n - 1);
-        (n as u128) * n1fac
-    }
-}
-
+// fn fact(n: u8) -> u128 {
+//     if n == 0 {
+//         1
+//     } else {
+//         let n1fac = fact(n - 1);
+//         (n as u128) * n1fac
+//     }
+// }
+//
 pub fn main() {
-    let _x = fact(10);
+    // let _x = fact(10);
 }

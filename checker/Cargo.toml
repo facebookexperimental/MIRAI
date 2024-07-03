@@ -29,7 +29,7 @@ doctest = false # and no doc tests
 [dependencies]
 bincode = { version = "*", features = ["i128"] }
 cargo_metadata = "*"
-clap = "=4.4.8"
+clap = "*"
 env_logger = "*"
 fs2 = "*"
 itertools = "*"
@@ -40,17 +40,17 @@ mirai-annotations = { path = "../annotations" }
 petgraph = "*"
 rand = "*"
 rayon = "*"
-regex = "1.5.6"
+regex = "*"
 rpds = { version = "*", features = ["serde"] }
 rustc_tools_util = "*"
-serde = { version = "=1.0.192", features = ["derive", "alloc", "rc"] }
+serde = { version = "*", features = ["derive", "alloc", "rc"] }
 serde_json = "*"
 shellwords = "*"
 sled = "*"
-tar = "0.4.38"
+tar = "*"
 tempfile = "*"
 triomphe = "=0.1.9"
-z3-sys = { version = "*", git = "https://github.com/prove-rs/z3.rs.git", rev = "cb7b79a61433673a5e6b07559cc661a97b5a84cf", optional = true }
+z3-sys = { version = "*", git = "https://github.com/prove-rs/z3.rs.git", optional = true }
 
 [dev-dependencies]
 walkdir = "*"
