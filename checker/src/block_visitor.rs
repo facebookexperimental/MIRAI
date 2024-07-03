@@ -4000,6 +4000,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         &[*elem],
                     );
                 }
+                mir::ProjectionElem::Subtype { .. } => continue,
                 mir::ProjectionElem::OpaqueCast(_) => {
                     continue;
                 }
@@ -4082,6 +4083,10 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     Rc::new(BOTTOM)
                 };
                 PathSelector::Downcast(name_str, index.as_usize(), tag_value)
+            }
+            mir::ProjectionElem::Subtype(_) => {
+                // Dummy selector that will be ignored by caller.
+                PathSelector::Deref
             }
             mir::ProjectionElem::OpaqueCast(_) => {
                 // Dummy selector that will be ignored by caller.
