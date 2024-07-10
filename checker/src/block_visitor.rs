@@ -214,7 +214,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             .type_visitor()
             .get_rustc_place_type(place, self.bv.current_span);
         match ty.kind() {
-            TyKind::Adt(..) | TyKind::Generator(..) => {
+            TyKind::Adt(..) | TyKind::Coroutine(..) => {
                 let discr_ty = ty.discriminant_ty(self.bv.tcx);
                 let discr_bits = match ty.discriminant_for_variant(self.bv.tcx, variant_index) {
                     Some(discr) => discr.val,
@@ -325,7 +325,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 unwind,
             } => self.visit_assert(cond, *expected, msg, *target, *unwind),
             mir::TerminatorKind::Yield { .. } => assume_unreachable!(),
-            mir::TerminatorKind::GeneratorDrop => assume_unreachable!(),
+            mir::TerminatorKind::CoroutineDrop => assume_unreachable!(),
             mir::TerminatorKind::FalseEdge { .. } => assume_unreachable!(),
             mir::TerminatorKind::FalseUnwind { .. } => assume_unreachable!(),
             mir::TerminatorKind::InlineAsm { destination, .. } => {
@@ -693,7 +693,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 }
             }
         }
-        let self_ty_is_fn_ptr = if let Some(ty) = actual_argument_types.get(0) {
+        let self_ty_is_fn_ptr = if let Some(ty) = actual_argument_types.first() {
             let self_ty = self.type_visitor().get_dereferenced_type(*ty);
             matches!(self_ty.kind(), TyKind::FnPtr(..))
         } else {
@@ -1025,7 +1025,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 }
                 match specialized_closure_ty.kind() {
                     TyKind::Closure(def_id, args)
-                    | TyKind::Generator(def_id, args, _)
+                    | TyKind::Coroutine(def_id, args, _)
                     | TyKind::FnDef(def_id, args) => {
                         return extract_func_ref(self.visit_function_reference(
                             *def_id,
@@ -2589,7 +2589,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 }
             }
             mir::AggregateKind::Closure(def_id, args)
-            | mir::AggregateKind::Generator(def_id, args, _) => {
+            | mir::AggregateKind::Coroutine(def_id, args, _) => {
                 let ty = self.bv.tcx.type_of(*def_id).skip_binder();
                 let func_const = self.visit_function_reference(*def_id, ty, Some(args));
                 let func_val = Rc::new(func_const.clone().into());
@@ -3409,7 +3409,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             // deserialize that and return an heap block that represents the closure state + func ptr
             TyKind::Closure(def_id, args)
             | TyKind::FnDef(def_id, args)
-            | TyKind::Generator(def_id, args, ..)
+            | TyKind::Coroutine(def_id, args, ..)
             | TyKind::Alias(
                 rustc_middle::ty::Opaque,
                 rustc_middle::ty::AliasTy { def_id, args, .. },
@@ -3608,8 +3608,8 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                             TyKind::Adt(adt_def, _) => adt_def
                                 .discriminants(self.bv.tcx)
                                 .find(|(_, var)| var.val == data),
-                            TyKind::Generator(def_id, args, _) => {
-                                let generator = args.as_generator();
+                            TyKind::Coroutine(def_id, args, _) => {
+                                let generator = args.as_coroutine();
                                 generator
                                     .discriminants(*def_id, self.bv.tcx)
                                     .find(|(_, var)| var.val == data)
@@ -3907,7 +3907,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     self.bv.update_value_at(len_path, len_val);
                 }
                 TyKind::Closure(def_id, generic_args)
-                | TyKind::Generator(def_id, generic_args, ..) => {
+                | TyKind::Coroutine(def_id, generic_args, _) => {
                     let func_const = self.visit_function_reference(*def_id, ty, Some(generic_args));
                     let func_val = Rc::new(func_const.clone().into());
                     self.bv
@@ -3918,7 +3918,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     rustc_middle::ty::AliasTy { def_id, .. },
                 ) => {
                     if let TyKind::Closure(def_id, generic_args)
-                    | TyKind::Generator(def_id, generic_args, _) =
+                    | TyKind::Coroutine(def_id, generic_args, _) =
                         self.bv.tcx.type_of(*def_id).skip_binder().kind()
                     {
                         let func_const =

@@ -481,7 +481,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                             );
                             match ty.kind() {
                                 TyKind::Adt(def, _) if def.is_enum() => {}
-                                TyKind::Generator(..) => {}
+                                TyKind::Coroutine(..) => {}
                                 _ => {
                                     result = Some(self.get_u128_const_val(0));
                                 }

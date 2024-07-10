@@ -1449,7 +1449,7 @@ impl CallSiteOutput {
                         file_map,
                         &line_and_file.file.name,
                     ));
-                    first_line = line_and_file.lines.get(0).map(|l| l.line_index + 1);
+                    first_line = line_and_file.lines.first().map(|l| l.line_index + 1);
                 }
                 let callable = Callable {
                     name,
