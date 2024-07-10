@@ -159,8 +159,8 @@ impl<'tcx> TypeVisitor<'tcx> {
                     }
                 }
             }
-            TyKind::Generator(_, args, _) => {
-                for (i, ty) in args.as_generator().prefix_tys().iter().enumerate() {
+            TyKind::Coroutine(_, args, _) => {
+                for (i, ty) in args.as_coroutine().prefix_tys().iter().enumerate() {
                     let var_type = ExpressionType::from(ty.kind());
                     let mut qualifier = path.clone();
                     if is_ref {
@@ -276,8 +276,8 @@ impl<'tcx> TypeVisitor<'tcx> {
                 | TyKind::FnDef(..)
                 | TyKind::FnPtr(_)
                 | TyKind::Foreign(..)
-                | TyKind::Generator(..)
-                | TyKind::GeneratorWitness(..)
+                | TyKind::Coroutine(..)
+                | TyKind::CoroutineWitness(..)
                 | TyKind::Alias(rustc_middle::ty::Opaque, ..)
         )
     }
@@ -503,9 +503,9 @@ impl<'tcx> TypeVisitor<'tcx> {
                                         });
                                 }
                             }
-                            TyKind::Generator(def_id, args, _) => {
+                            TyKind::Coroutine(def_id, args, _) => {
                                 let mut tuple_types =
-                                    args.as_generator().state_tys(*def_id, self.tcx);
+                                    args.as_coroutine().state_tys(*def_id, self.tcx);
                                 if let Some(field_tys) = tuple_types.nth(*ordinal) {
                                     return Ty::new_tup_from_iter(self.tcx, field_tys);
                                 }
@@ -810,7 +810,7 @@ impl<'tcx> TypeVisitor<'tcx> {
             self.tcx.mk_param_from_def(param_def) // not used
         });
         // Add "Self" -> actual_argument_types[0]
-        if let Some(self_ty) = actual_argument_types.get(0) {
+        if let Some(self_ty) = actual_argument_types.first() {
             let self_ty = if let TyKind::Ref(_, ty, _) = self_ty.kind() {
                 *ty
             } else {
@@ -959,8 +959,8 @@ impl<'tcx> TypeVisitor<'tcx> {
                         let variant = &def.variants()[*ordinal];
                         let field_tys = variant.fields.iter().map(|fd| fd.ty(self.tcx, args));
                         return Ty::new_tup_from_iter(self.tcx, field_tys);
-                    } else if let TyKind::Generator(def_id, args, ..) = base_ty.kind() {
-                        let mut tuple_types = args.as_generator().state_tys(*def_id, self.tcx);
+                    } else if let TyKind::Coroutine(def_id, args, _) = base_ty.kind() {
+                        let mut tuple_types = args.as_coroutine().state_tys(*def_id, self.tcx);
                         if let Some(field_tys) = tuple_types.nth(ordinal.index()) {
                             return Ty::new_tup_from_iter(self.tcx, field_tys);
                         }
@@ -1239,15 +1239,15 @@ impl<'tcx> TypeVisitor<'tcx> {
                 closures_being_specialized.remove(def_id);
                 specialized_closure
             }
-            TyKind::Generator(def_id, args, movability) => Ty::new_generator(
+            TyKind::Coroutine(def_id, args, movability) => Ty::new_coroutine(
                 self.tcx,
                 *def_id,
                 self.specialize_generic_args(args, map),
                 *movability,
             ),
-            TyKind::GeneratorWitness(def_id, args) => {
+            TyKind::CoroutineWitness(def_id, args) => {
                 let specialized_types = self.specialize_generic_args(args, map);
-                Ty::new_generator_witness(self.tcx, *def_id, specialized_types)
+                Ty::new_coroutine_witness(self.tcx, *def_id, specialized_types)
             }
             TyKind::Tuple(types) => Ty::new_tup_from_iter(
                 self.tcx,

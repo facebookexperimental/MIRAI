@@ -91,7 +91,7 @@ fn call_cargo_on_each_package_target(package: &Package) {
     for target in &package.targets {
         let kind = target
             .kind
-            .get(0)
+            .first()
             .expect("bad cargo metadata: target::kind");
         if lib_only && kind != "lib" {
             continue;

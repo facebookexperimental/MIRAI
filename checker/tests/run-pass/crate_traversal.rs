@@ -7,7 +7,7 @@
 // statements and expressions that exercise all visitor code paths
 
 #![allow(unused)]
-#![feature(generators)]
+#![feature(coroutines)]
 
 use mirai_annotations::*;
 

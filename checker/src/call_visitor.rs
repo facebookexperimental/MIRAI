@@ -1270,8 +1270,8 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                     args.as_closure().args,
                     &self.type_visitor().generic_argument_map,
                 )),
-                TyKind::Generator(_, args, _) => Some(self.type_visitor().specialize_generic_args(
-                    args.as_generator().args,
+                TyKind::Coroutine(_, args, _) => Some(self.type_visitor().specialize_generic_args(
+                    args.as_coroutine().args,
                     &self.type_visitor().generic_argument_map,
                 )),
                 TyKind::FnDef(_, args)
@@ -2016,7 +2016,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                 match rustc_gen_args[0].unpack() {
                     GenericArgKind::Type(ty) => match ty.kind() {
                         TyKind::Adt(def, _) if def.is_enum() => {}
-                        TyKind::Generator(..) => {}
+                        TyKind::Coroutine(..) => {}
                         _ => {
                             discriminant_value = Rc::new(ConstantDomain::U128(0).into());
                         }
@@ -2391,7 +2391,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
         let source_rustc_type = self
             .callee_generic_arguments
             .expect("rustc type error")
-            .get(0)
+            .first()
             .expect("rustc type error")
             .expect_ty();
         let target_path = self.block_visitor.visit_rh_place(&self.destination);
@@ -2426,7 +2426,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
         let elem_type = self
             .callee_generic_arguments
             .expect("write_bytes<T>")
-            .get(0)
+            .first()
             .expect("write_bytes<T>")
             .expect_ty();
         let mut elem_size = self.type_visitor().get_type_size(elem_type);

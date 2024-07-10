@@ -71,7 +71,7 @@ pub fn is_higher_order_function(def_id: DefId, tcx: TyCtxt<'_>) -> bool {
 /// This does not traverse references, so the answer is approximate.
 #[logfn(TRACE)]
 pub fn contains_function<'tcx>(ty: Ty<'tcx>, tcx: TyCtxt<'tcx>) -> bool {
-    if ty.is_fn() || ty.is_closure() || ty.is_generator() {
+    if ty.is_fn() || ty.is_closure() || ty.is_coroutine() {
         return true;
     }
     if let TyKind::Adt(def, args) = ty.kind() {
@@ -250,17 +250,17 @@ fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: TyCtxt<'tcx>) 
                 }
             }
         }
-        TyKind::Generator(def_id, subs, ..) => {
-            str.push_str("generator_");
+        TyKind::Coroutine(def_id, subs, _) => {
+            str.push_str("coroutine_");
             str.push_str(qualified_type_name(tcx, *def_id).as_str());
-            for sub in subs.as_generator().args {
+            for sub in subs.as_coroutine().args {
                 if let GenericArgKind::Type(ty) = sub.unpack() {
                     str.push('_');
                     append_mangled_type(str, ty, tcx);
                 }
             }
         }
-        TyKind::GeneratorWitness(_def_id, subs) => {
+        TyKind::CoroutineWitness(_def_id, subs) => {
             for ty in subs.types() {
                 str.push('_');
                 append_mangled_type(str, ty, tcx)
@@ -497,7 +497,7 @@ pub fn is_concrete(ty: &TyKind<'_>) -> bool {
         TyKind::Adt(_, gen_args)
         | TyKind::Closure(_, gen_args)
         | TyKind::FnDef(_, gen_args)
-        | TyKind::Generator(_, gen_args, _)
+        | TyKind::Coroutine(_, gen_args, _)
         | TyKind::Alias(_, rustc_middle::ty::AliasTy { args: gen_args, .. }) => {
             are_concrete(gen_args)
         }
