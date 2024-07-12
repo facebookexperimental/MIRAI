@@ -73,7 +73,7 @@ commit;
       "local": true
     },
     {
-      "name": "/trait/<Bar as Tr>::bar(&ReLateBound(DebruijnIndex(0), BoundRegion { var: 0, kind: BrNamed(DefId(0:13 ~ trait[3dda]::{impl#0}::bar::'_), '_) }) Bar)->i32",
+      "name": "/trait/<Bar as Tr>::bar(&ReLateBound(DebruijnIndex(0), BoundRegion { var: 0, kind: BrNamed(DefId(0:13 ~ trait[0a94]::{impl#0}::bar::'_), '_) }) Bar)->i32",
       "file_index": 0,
       "first_line": 14,
       "local": true

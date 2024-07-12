@@ -74,7 +74,7 @@ commit;
       "local": true
     },
     {
-      "name": "/generic/Gen::<T>::bar(&ReLateBound(DebruijnIndex(0), BoundRegion { var: 0, kind: BrNamed(DefId(0:12 ~ generic[87ab]::{impl#0}::bar::'_), '_) }) Gen<T/#0>,T/#0)->()",
+      "name": "/generic/Gen::<T>::bar(&ReLateBound(DebruijnIndex(0), BoundRegion { var: 0, kind: BrNamed(DefId(0:12 ~ generic[6eac]::{impl#0}::bar::'_), '_) }) Gen<T/#0>,T/#0)->()",
       "file_index": 0,
       "first_line": 14,
       "local": true
