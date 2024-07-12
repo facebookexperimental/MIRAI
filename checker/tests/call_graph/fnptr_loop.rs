@@ -82,7 +82,7 @@ commit;
       "local": true
     },
     {
-      "name": "/fnptr_loop/fn2(u32,&ReLateBound(DebruijnIndex(0), BoundRegion { var: 0, kind: BrNamed(DefId(0:7 ~ fnptr_loop[3fb9]::fn2::'_), '_) }) Binder(fn(u32) -> u32, []))->u32",
+      "name": "/fnptr_loop/fn2(u32,&ReBound(DebruijnIndex(0), BoundRegion { var: 0, kind: BrNamed(DefId(0:7 ~ fnptr_loop[11d0]::fn2::'_), '_) }) Binder(fn(u32) -> u32, []))->u32",
       "file_index": 0,
       "first_line": 12,
       "local": true

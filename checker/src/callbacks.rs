@@ -104,7 +104,7 @@ impl rustc_driver::Callbacks for MiraiCallbacks {
         compiler: &interface::Compiler,
         queries: &'tcx Queries<'tcx>,
     ) -> Compilation {
-        compiler.session().abort_if_errors();
+        compiler.sess.abort_if_errors();
         if self
             .output_directory
             .to_str()
@@ -163,7 +163,7 @@ impl MiraiCallbacks {
             file_name: self.file_name.as_str(),
             known_names_cache: KnownNamesCache::create_cache_from_language_items(),
             options: &std::mem::take(&mut self.options),
-            session: compiler.session(),
+            session: &compiler.sess,
             generic_args_cache: HashMap::new(),
             summary_cache: PersistentSummaryCache::new(tcx, summary_store_path),
             tcx,
