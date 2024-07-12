@@ -76,7 +76,7 @@ pub fn contains_function<'tcx>(ty: Ty<'tcx>, tcx: TyCtxt<'tcx>) -> bool {
     }
     if let TyKind::Adt(def, args) = ty.kind() {
         for variant in def.variants().iter() {
-            for (_, field) in variant.fields.iter().enumerate() {
+            for field in variant.fields.iter() {
                 let field_ty = field.ty(tcx, args);
                 if contains_function(field_ty, tcx) {
                     return true;

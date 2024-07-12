@@ -84,7 +84,7 @@ impl rustc_driver::Callbacks for MiraiCallbacks {
             info!("in test only mode");
             self.options.test_only = true;
         }
-        config.crate_cfg.insert(("mirai".to_string(), None));
+        config.crate_cfg.push("mirai".to_string());
         match &config.output_dir {
             None => {
                 self.output_directory = std::env::temp_dir();
