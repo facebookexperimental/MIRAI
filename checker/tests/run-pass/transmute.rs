@@ -6,6 +6,7 @@
 
 // A test that uses std::mem::transmute
 
+#![allow(internal_features)]
 #![feature(core_intrinsics)]
 
 use mirai_annotations::*;

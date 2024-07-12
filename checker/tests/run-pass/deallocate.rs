@@ -7,6 +7,7 @@
 // A test that checks that deallocations are valid and that further uses of deallocated
 // pointers will lead to verification errors.
 
+#![allow(internal_features)]
 #![feature(core_intrinsics)]
 use mirai_annotations::*;
 

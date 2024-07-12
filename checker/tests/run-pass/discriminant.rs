@@ -6,6 +6,7 @@
 
 // A test that checks that std::intrinsics::discriminant_value is properly implemented.
 
+#![allow(internal_features)]
 #![feature(core_intrinsics)]
 
 use mirai_annotations::*;

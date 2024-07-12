@@ -6,6 +6,7 @@
 
 // A test that invokes std::intrinsics::copy_nonoverlapping;
 
+#![allow(internal_features)]
 #![feature(core_intrinsics)]
 use mirai_annotations::*;
 

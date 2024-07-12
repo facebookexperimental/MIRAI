@@ -126,8 +126,10 @@ pub fn is_public(def_id: DefId, tcx: TyCtxt<'_>) -> bool {
                                 .opt_def_id()
                                 .map_or_else(
                                     || {
-                                        tcx.sess
-                                            .delay_span_bug(tr.path.span, "trait without a def-id");
+                                        tcx.sess.span_delayed_bug(
+                                            tr.path.span,
+                                            "trait without a def-id",
+                                        );
                                         ty::Visibility::Public
                                     },
                                     |def_id| tcx.visibility(def_id),
@@ -425,10 +427,10 @@ fn push_component_name(component_data: DefPathData, target: &mut String) {
             ForeignMod => "foreign",
             Use => "use",
             GlobalAsm => "global_asm",
-            ClosureExpr => "closure",
+            Closure => "closure",
             Ctor => "ctor",
             AnonConst => "constant",
-            ImplTrait => "implement_trait",
+            OpaqueTy => "opaque",
             _ => assume_unreachable!(),
         }),
     };

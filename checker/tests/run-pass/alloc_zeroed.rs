@@ -6,6 +6,7 @@
 
 // A test that checks that dereferenced uninitialized pointers into zeroed heap blocks known to be zero.
 
+#![allow(internal_features)]
 #![feature(core_intrinsics)]
 use mirai_annotations::*;
 

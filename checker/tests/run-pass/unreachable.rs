@@ -6,6 +6,7 @@
 
 // A test that calls std::intrinsics::unreachable unconditionally.
 
+#![allow(internal_features)]
 #![feature(core_intrinsics)]
 #![allow(unused)]
 
