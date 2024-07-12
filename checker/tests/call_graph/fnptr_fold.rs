@@ -68,14 +68,14 @@ commit;
 /* EXPECTED:CALL_SITES{
   "files": [
     "tests/call_graph/fnptr_fold.rs",
-    "/rustc/e5cfc55477eceed1317a02189fdf77a4a98f2124/library/std/src/io/stdio.rs",
-    "/rustc/e5cfc55477eceed1317a02189fdf77a4a98f2124/library/core/src/fmt/mod.rs",
-    "/rustc/e5cfc55477eceed1317a02189fdf77a4a98f2124/library/core/src/slice/mod.rs",
-    "/rustc/e5cfc55477eceed1317a02189fdf77a4a98f2124/library/core/src/ptr/metadata.rs"
+    "/rustc/49b3924bd4a34d3cf9c37b74120fba78d9712ab8/library/std/src/io/stdio.rs",
+    "/rustc/49b3924bd4a34d3cf9c37b74120fba78d9712ab8/library/core/src/fmt/mod.rs",
+    "/rustc/49b3924bd4a34d3cf9c37b74120fba78d9712ab8/library/core/src/slice/mod.rs",
+    "/rustc/49b3924bd4a34d3cf9c37b74120fba78d9712ab8/library/core/src/ptr/metadata.rs"
   ],
   "callables": [
     {
-      "name": "/fnptr_fold/fn1(u32,&ReLateBound(DebruijnIndex(0), BoundRegion { var: 0, kind: BrNamed(DefId(0:7 ~ fnptr_fold[9539]::fn1::'_), '_) }) Binder(fn(u32) -> u32, []))->u32",
+      "name": "/fnptr_fold/fn1(u32,&ReBound(DebruijnIndex(0), BoundRegion { var: 0, kind: BrNamed(DefId(0:7 ~ fnptr_fold[6cb6]::fn1::'_), '_) }) Binder(fn(u32) -> u32, []))->u32",
       "file_index": 0,
       "first_line": 10,
       "local": true
@@ -99,25 +99,25 @@ commit;
       "local": true
     },
     {
-      "name": "/std/std::io::_print(std::fmt::Arguments<ReLateBound(DebruijnIndex(0), BoundRegion { var: 0, kind: BrNamed(DefId(1:12984 ~ std[d45d]::io::stdio::_print::'_), '_) })>)->()",
+      "name": "/std/std::io::_print(std::fmt::Arguments<ReBound(DebruijnIndex(0), BoundRegion { var: 0, kind: BrNamed(DefId(1:12918 ~ std[895e]::io::stdio::_print::'_), '_) })>)->()",
       "file_index": 1,
       "first_line": 1096,
       "local": false
     },
     {
-      "name": "/core/std::fmt::Arguments::<'a>::new_const(&ReEarlyBound(DefId(2:9526 ~ core[93bd]::fmt::{impl#2}::'a), 0, 'a) [&ReStatic str])->std::fmt::Arguments<ReEarlyBound(DefId(2:9526 ~ core[93bd]::fmt::{impl#2}::'a), 0, 'a)>",
+      "name": "/core/std::fmt::Arguments::<'a>::new_const(&ReEarlyParam(DefId(2:9648 ~ core[499d]::fmt::{impl#2}::'a), 0, 'a) [&ReStatic str])->std::fmt::Arguments<ReEarlyParam(DefId(2:9648 ~ core[499d]::fmt::{impl#2}::'a), 0, 'a)>",
       "file_index": 2,
-      "first_line": 318,
+      "first_line": 321,
       "local": true
     },
     {
-      "name": "/core/core::slice::<impl [T]>::len(&ReLateBound(DebruijnIndex(0), BoundRegion { var: 0, kind: BrNamed(DefId(2:57287 ~ core[93bd]::slice::{impl#0}::len::'_), '_) }) [T/#0])->usize",
+      "name": "/core/core::slice::<impl [T]>::len(&ReBound(DebruijnIndex(0), BoundRegion { var: 0, kind: BrNamed(DefId(2:58514 ~ core[499d]::slice::{impl#0}::len::'_), '_) }) [T/#0])->usize",
       "file_index": 3,
-      "first_line": 141,
+      "first_line": 142,
       "local": true
     },
     {
-      "name": "/core/std::ptr::metadata(*const T/#0)->Alias(Projection, AliasTy { args: [T/#0], def_id: DefId(2:1738 ~ core[93bd]::ptr::metadata::Pointee::Metadata) })",
+      "name": "/core/std::ptr::metadata(*const T/#0)->Alias(Projection, AliasTy { args: [T/#0], def_id: DefId(2:1750 ~ core[499d]::ptr::metadata::Pointee::Metadata) })",
       "file_index": 4,
       "first_line": 94,
       "local": true
@@ -161,21 +161,21 @@ commit;
     ],
     [
       2,
-      319,
+      322,
       12,
       5,
       6
     ],
     [
       2,
-      320,
+      323,
       13,
       5,
       5
     ],
     [
       3,
-      142,
+      143,
       9,
       6,
       7

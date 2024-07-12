@@ -2446,7 +2446,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         param_env: self.type_visitor().get_param_env(),
                     };
                     let offset_in_bytes = ty_and_layout
-                        .offset_of_subfield(&lcx, fields.iter().map(|f| f.index()))
+                        .offset_of_subfield(&lcx, fields.iter())
                         .bytes();
                     Rc::new((offset_in_bytes as u128).into())
                 } else {

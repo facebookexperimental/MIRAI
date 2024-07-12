@@ -76,7 +76,7 @@ pub fn contains_function<'tcx>(ty: Ty<'tcx>, tcx: TyCtxt<'tcx>) -> bool {
     }
     if let TyKind::Adt(def, args) = ty.kind() {
         for variant in def.variants().iter() {
-            for (_, field) in variant.fields.iter().enumerate() {
+            for field in variant.fields.iter() {
                 let field_ty = field.ty(tcx, args);
                 if contains_function(field_ty, tcx) {
                     return true;
@@ -97,7 +97,7 @@ pub fn is_public(def_id: DefId, tcx: TyCtxt<'_>) -> bool {
         match tcx.resolutions(()).visibilities.get(&def_id) {
             Some(vis) => vis.is_public(),
             None => {
-                let hir_id = tcx.hir().local_def_id_to_hir_id(def_id);
+                let hir_id = tcx.local_def_id_to_hir_id(def_id);
                 match tcx.hir().get(hir_id) {
                     Node::Expr(rustc_hir::Expr {
                         kind: rustc_hir::ExprKind::Closure { .. },

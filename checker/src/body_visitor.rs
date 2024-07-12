@@ -2255,7 +2255,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
         if matches!(source_val.expression, Expression::CompileTimeConstant(..)) {
             let source_path = Path::new_computed(source_val);
             for i in from..to {
-                let target_index_val = self.get_u128_const_val(u128::try_from(i - from).unwrap());
+                let target_index_val = self.get_u128_const_val(u128::from(i - from));
                 let indexed_target = Path::new_index(target_path.clone(), target_index_val)
                     .canonicalize(&self.current_environment);
                 update(self, indexed_target, source_path.clone(), elem_ty);
@@ -2267,7 +2267,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 let index_val = self.get_u128_const_val(u128::from(i));
                 let indexed_source = Path::new_index(source_path.clone(), index_val)
                     .canonicalize(&self.current_environment);
-                let target_index_val = self.get_u128_const_val(u128::try_from(i - from).unwrap());
+                let target_index_val = self.get_u128_const_val(u128::from(i - from));
                 let indexed_target = Path::new_index(target_path.clone(), target_index_val)
                     .canonicalize(&self.current_environment);
                 trace!(
