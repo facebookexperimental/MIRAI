@@ -31,7 +31,7 @@ use std::path::Path;
 
 fn main() {
     let early_error_handler =
-        rustc_session::EarlyErrorHandler::new(rustc_session::config::ErrorOutputType::default());
+        rustc_session::EarlyDiagCtxt::new(rustc_session::config::ErrorOutputType::default());
 
     // Initialize loggers.
     if env::var("RUSTC_LOG").is_ok() {

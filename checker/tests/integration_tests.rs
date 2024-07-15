@@ -150,7 +150,7 @@ fn run_directory(directory_path: PathBuf) -> Vec<(String, String)> {
     files_and_temp_dirs
 }
 
-fn build_options(early_error_handler: &EarlyErrorHandler) -> Options {
+fn build_options(early_error_handler: &EarlyDiagCtxt) -> Options {
     let mut options = Options::default();
     options.parse_from_str("", early_error_handler, true); // get defaults
     options.diag_level = DiagLevel::Paranoid; // override default
@@ -256,7 +256,7 @@ fn invoke_driver_on_files(
 // Runs the single test case found in file_name, using temp_dir_path as the place
 // to put compiler output, which for Mirai includes the persistent summary store.
 fn invoke_driver(
-    early_error_handler: &EarlyErrorHandler,
+    early_error_handler: &EarlyDiagCtxt,
     file_name: String,
     temp_dir_path: String,
     sys_root: String,
@@ -428,7 +428,7 @@ fn check_call_graph_output(
 
 // Default test driver
 fn start_driver(config: DriverConfig) -> usize {
-    let early_error_handler = EarlyErrorHandler::new(config::ErrorOutputType::default());
+    let early_error_handler = EarlyDiagCtxt::new(config::ErrorOutputType::default());
     let sys_root = utils::find_sysroot();
     let options = build_options(&early_error_handler);
     self::invoke_driver(
@@ -444,7 +444,7 @@ fn start_driver(config: DriverConfig) -> usize {
 // Test driver for call graph generation;
 // sets up call graph configuration.
 fn start_driver_call_graph(config: DriverConfig) -> usize {
-    let early_error_handler = EarlyErrorHandler::new(config::ErrorOutputType::default());
+    let early_error_handler = EarlyDiagCtxt::new(config::ErrorOutputType::default());
     let sys_root = utils::find_sysroot();
     let mut options = build_options(&early_error_handler);
     let (call_graph_config, call_graph_config_path) =

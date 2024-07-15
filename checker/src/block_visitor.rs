@@ -2954,7 +2954,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             // The size is always the pointer size of the current target, but this is not information
             // that we always have readily available.
             ConstValue::Scalar(Scalar::Ptr(ptr, _size)) => {
-                match self.bv.tcx.try_get_global_alloc(ptr.provenance) {
+                match self.bv.tcx.try_get_global_alloc(ptr.provenance.alloc_id()) {
                     Some(GlobalAlloc::Memory(alloc)) => {
                         let alloc_len = alloc.inner().len() as u64;
                         let offset_bytes = ptr.into_parts().1.bytes();

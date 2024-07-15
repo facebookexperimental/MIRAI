@@ -9,7 +9,7 @@ use clap::{Arg, Command};
 use itertools::Itertools;
 
 use mirai_annotations::*;
-use rustc_session::EarlyErrorHandler;
+use rustc_session::EarlyDiagCtxt;
 
 /// Creates the clap::Command metadata for argument parsing.
 fn make_options_parser(running_test_harness: bool) -> Command {
@@ -110,7 +110,7 @@ impl Options {
     pub fn parse_from_str(
         &mut self,
         s: &str,
-        handler: &EarlyErrorHandler,
+        handler: &EarlyDiagCtxt,
         running_test_harness: bool,
     ) -> Vec<String> {
         self.parse(
@@ -127,7 +127,7 @@ impl Options {
     pub fn parse(
         &mut self,
         args: &[String],
-        handler: &EarlyErrorHandler,
+        handler: &EarlyDiagCtxt,
         running_test_harness: bool,
     ) -> Vec<String> {
         let mut mirai_args_end = args.len();
