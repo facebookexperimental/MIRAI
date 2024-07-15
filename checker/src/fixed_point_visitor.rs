@@ -160,7 +160,7 @@ impl<'fixed, 'analysis, 'compilation, 'tcx>
             if changed {
                 if self.bv.cv.options.diag_level == DiagLevel::Paranoid {
                     let span = self.bv.current_span;
-                    let warning = self.bv.cv.session.struct_span_warn(
+                    let warning = self.bv.cv.session.dcx().struct_span_warn(
                         span,
                         format!(
                             "Fixed point loop iterations exceeded limit of {}",

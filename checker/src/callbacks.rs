@@ -104,7 +104,7 @@ impl rustc_driver::Callbacks for MiraiCallbacks {
         compiler: &interface::Compiler,
         queries: &'tcx Queries<'tcx>,
     ) -> Compilation {
-        compiler.sess.abort_if_errors();
+        compiler.sess.dcx().abort_if_errors();
         if self
             .output_directory
             .to_str()

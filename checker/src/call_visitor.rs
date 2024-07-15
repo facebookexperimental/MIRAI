@@ -791,6 +791,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                         .bv
                         .cv
                         .session
+                        .dcx()
                         .struct_span_warn(span, message);
                     self.block_visitor.bv.emit_diagnostic(warning);
                     return;
@@ -811,6 +812,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                     .bv
                     .cv
                     .session
+                    .dcx()
                     .struct_span_warn(span, message);
                 self.block_visitor.bv.emit_diagnostic(warning);
             }
@@ -942,6 +944,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                             .bv
                             .cv
                             .session
+                            .dcx()
                             .struct_span_warn(span, msg.to_string());
                         self.block_visitor.bv.emit_diagnostic(warning);
                     } else {
@@ -967,6 +970,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                                 .bv
                                 .cv
                                 .session
+                                .dcx()
                                 .struct_span_warn(span, msg.to_string());
                             self.block_visitor.bv.emit_diagnostic(warning);
                         }
@@ -1015,6 +1019,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                                 .bv
                                 .cv
                                 .session
+                                .dcx()
                                 .struct_span_warn(span, msg.to_string());
                             self.block_visitor.bv.emit_diagnostic(warning);
                         } else {
@@ -1088,10 +1093,11 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                                 self.block_visitor.bv.preconditions.push(precondition);
                             }
                             _ => {
-                                let warning = self.block_visitor.bv.cv.session.struct_span_warn(
-                                    self.block_visitor.bv.current_span,
-                                    warning.to_string(),
-                                );
+                                let warning =
+                                    self.block_visitor.bv.cv.session.dcx().struct_span_warn(
+                                        self.block_visitor.bv.current_span,
+                                        warning.to_string(),
+                                    );
                                 self.block_visitor.bv.emit_diagnostic(warning);
                             }
                         }
@@ -1270,7 +1276,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                     args.as_closure().args,
                     &self.type_visitor().generic_argument_map,
                 )),
-                TyKind::Coroutine(_, args, _) => Some(self.type_visitor().specialize_generic_args(
+                TyKind::Coroutine(_, args) => Some(self.type_visitor().specialize_generic_args(
                     args.as_coroutine().args,
                     &self.type_visitor().generic_argument_map,
                 )),
@@ -1388,7 +1394,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             // Check if the tagged value has a pointer type (e.g., a reference).
             // Emit an warning message if so.
             if self.block_visitor.bv.check_for_errors && source_rustc_type.is_any_ptr() {
-                let warning = self.block_visitor.bv.cv.session.struct_span_warn(
+                let warning = self.block_visitor.bv.cv.session.dcx().struct_span_warn(
                     self.block_visitor.bv.current_span,
                     "the macro add_tag! expects its argument to be a reference to a non-reference value",
                 );
@@ -1504,7 +1510,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             // Check if the tagged value has a pointer type (e.g., a reference).
             // Emit a warning message if so.
             if self.block_visitor.bv.check_for_errors && source_rustc_type.is_any_ptr() {
-                let warning = self.block_visitor.bv.cv.session.struct_span_warn(
+                let warning = self.block_visitor.bv.cv.session.dcx().struct_span_warn(
                     self.block_visitor.bv.current_span,
                     format!(
                         "the macro {} expects its first argument to be a reference to a non-reference value",
@@ -1853,6 +1859,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                 .bv
                 .cv
                 .session
+                .dcx()
                 .struct_span_warn(span, "preconditions should be reached unconditionally");
             self.block_visitor.bv.emit_diagnostic(warning);
             self.block_visitor.bv.check_for_unconditional_precondition = false;
@@ -2529,7 +2536,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             if !self.callee_def_id.is_local()
                 && self.block_visitor.bv.cv.options.diag_level != DiagLevel::Default
             {
-                let warning = self.block_visitor.bv.cv.session.struct_span_warn(
+                let warning = self.block_visitor.bv.cv.session.dcx().struct_span_warn(
                     self.block_visitor.bv.current_span,
                     "the called function could not be completely analyzed",
                 );
@@ -3030,7 +3037,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
             }
         }
         if self.block_visitor.bv.check_for_errors {
-            let warning = self.block_visitor.bv.cv.session.struct_span_warn(
+            let warning = self.block_visitor.bv.cv.session.dcx().struct_span_warn(
                 self.block_visitor.bv.current_span,
                 "this argument should be a string literal, do not call this function directly",
             );
@@ -3080,7 +3087,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                     }
                     _ => {
                         if self.block_visitor.bv.check_for_errors {
-                            let warning = self.block_visitor.bv.cv.session.struct_span_warn(
+                            let warning = self.block_visitor.bv.cv.session.dcx().struct_span_warn(
                                 self.block_visitor.bv.current_span,
                                 "the tag type should be a generic type whose first parameter is a constant of type TagPropagationSet",
                             );
@@ -3099,7 +3106,7 @@ impl<'call, 'block, 'analysis, 'compilation, 'tcx>
                     }
                     _ => {
                         if self.block_visitor.bv.check_for_errors {
-                            let warning = self.block_visitor.bv.cv.session.struct_span_warn(
+                            let warning = self.block_visitor.bv.cv.session.dcx().struct_span_warn(
                                 self.block_visitor.bv.current_span,
                                 "the first parameter of the tag type should have type TagPropagationSet",
                             );

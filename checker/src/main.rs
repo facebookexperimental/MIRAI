@@ -59,7 +59,7 @@ fn main() {
         .map(|(i, arg)| {
             arg.into_string().unwrap_or_else(|arg| {
                 early_error_handler
-                    .early_error(format!("Argument {i} is not valid Unicode: {arg:?}"))
+                    .early_fatal(format!("Argument {i} is not valid Unicode: {arg:?}"))
             })
         })
         .collect::<Vec<_>>();
