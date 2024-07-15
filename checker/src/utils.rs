@@ -94,11 +94,16 @@ pub fn is_public(def_id: DefId, tcx: TyCtxt<'_>) -> bool {
 
     if tcx.hir().get_if_local(def_id).is_some() {
         let def_id = def_id.expect_local();
-        match tcx.resolutions(()).visibilities.get(&def_id) {
-            Some(vis) => vis.is_public(),
+        match tcx
+            .resolutions(())
+            .visibilities_for_hashing
+            .iter()
+            .find(|(id, _)| *id == def_id)
+        {
+            Some((_, vis)) => vis.is_public(),
             None => {
                 let hir_id = tcx.local_def_id_to_hir_id(def_id);
-                match tcx.hir().get(hir_id) {
+                match tcx.hir_node(hir_id) {
                     Node::Expr(rustc_hir::Expr {
                         kind: rustc_hir::ExprKind::Closure { .. },
                         ..
@@ -112,7 +117,7 @@ pub fn is_public(def_id: DefId, tcx: TyCtxt<'_>) -> bool {
                         .is_public(),
                     Node::ImplItem(..) => {
                         let parent_def_id: LocalDefId = tcx.hir().get_parent_item(hir_id).def_id;
-                        match tcx.hir().get_by_def_id(parent_def_id) {
+                        match tcx.hir_node_by_def_id(parent_def_id) {
                             Node::Item(rustc_hir::Item {
                                 kind:
                                     rustc_hir::ItemKind::Impl(rustc_hir::Impl {

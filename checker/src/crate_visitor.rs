@@ -243,7 +243,7 @@ impl<'compilation, 'tcx> CrateVisitor<'compilation, 'tcx> {
     /// Emit any diagnostics or, if testing, check that they are as expected.
     #[logfn_inputs(TRACE)]
     fn emit_or_check_diagnostics(&mut self) {
-        self.session.diagnostic().reset_err_count();
+        self.session.dcx().reset_err_count();
         if self.options.statistics {
             let num_diags = self.diagnostics_for.values().flatten().count();
             for (_, diags) in self.diagnostics_for.drain() {

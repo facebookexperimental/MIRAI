@@ -74,7 +74,7 @@ commit;
   ],
   "callables": [
     {
-      "name": "/fnptr_clean/fn1(u32,&ReBound(DebruijnIndex(0), BoundRegion { var: 0, kind: BrNamed(DefId(0:8 ~ fnptr_clean[599c]::fn1::'_), '_) }) Binder(fn(u32) -> u32, []))->u32",
+      "name": "/fnptr_clean/fn1(u32,&ReBound(DebruijnIndex(0), BoundRegion { var: 0, kind: BrNamed(DefId(0:8 ~ fnptr_clean[5a5f]::fn1::'_), '_) }) Binder(fn(u32) -> u32, []))->u32",
       "file_index": 0,
       "first_line": 14,
       "local": true
