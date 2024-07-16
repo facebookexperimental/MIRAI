@@ -365,7 +365,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         if !self.bv.cv.constant_time_tag_not_found {
                             self.bv.cv.constant_time_tag_not_found = true;
                             let span = self.bv.current_span;
-                            let warning = self.bv.cv.session.struct_span_warn(
+                            let warning = self.bv.cv.session.dcx().struct_span_warn(
                                 span,
                                 format!(
                                     "unknown tag type for constant-time verification: {tag_name}",
@@ -960,7 +960,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 }
                 _ => {
                     // Give a diagnostic about this call, and make it the programmer's problem.
-                    let warning = self.bv.cv.session.struct_span_warn(
+                    let warning = self.bv.cv.session.dcx().struct_span_warn(
                         self.bv.current_span,
                         "the called function did not resolve to an implementation with a MIR body",
                     );
@@ -1025,7 +1025,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 }
                 match specialized_closure_ty.kind() {
                     TyKind::Closure(def_id, args)
-                    | TyKind::Coroutine(def_id, args, _)
+                    | TyKind::Coroutine(def_id, args)
                     | TyKind::FnDef(def_id, args) => {
                         return extract_func_ref(self.visit_function_reference(
                             *def_id,
@@ -1156,6 +1156,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             .bv
             .cv
             .session
+            .dcx()
             .struct_span_warn(span, diagnostic.as_ref().to_string());
         for pc_span in precondition.spans.iter() {
             let snippet = self.bv.tcx.sess.source_map().span_to_snippet(*pc_span);
@@ -1193,7 +1194,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         self.bv.post_condition_block = Some(this_block);
                     } else {
                         let span = self.bv.current_span;
-                        let warning = self.bv.cv.session.struct_span_warn(
+                        let warning = self.bv.cv.session.dcx().struct_span_warn(
                             span,
                             "multiple post conditions must be on the same execution path",
                         );
@@ -1232,7 +1233,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             let span = self.bv.current_span.source_callsite();
             let message =
                 "this is unreachable, mark it as such by using the verify_unreachable! macro";
-            let warning = self.bv.cv.session.struct_span_warn(span, message);
+            let warning = self.bv.cv.session.dcx().struct_span_warn(span, message);
             self.bv.emit_diagnostic(warning);
             return None;
         }
@@ -1249,7 +1250,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             } else {
                 "possible unsatisfied postcondition"
             };
-            let warning = self.bv.cv.session.struct_span_warn(span, msg);
+            let warning = self.bv.cv.session.dcx().struct_span_warn(span, msg);
             self.bv.emit_diagnostic(warning);
             // Don't add the post condition to the summary
             return None;
@@ -1269,6 +1270,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 .bv
                 .cv
                 .session
+                .dcx()
                 .struct_span_warn(span, "provably false verification condition");
             self.bv.emit_diagnostic(warning);
             if entry_cond_as_bool.is_none()
@@ -1315,7 +1317,12 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 )
             {
                 let span = self.bv.current_span.source_callsite();
-                let warning = self.bv.cv.session.struct_span_warn(span, warning.clone());
+                let warning = self
+                    .bv
+                    .cv
+                    .session
+                    .dcx()
+                    .struct_span_warn(span, warning.clone());
                 self.bv.emit_diagnostic(warning);
             }
         }
@@ -1396,7 +1403,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         || self.bv.preconditions.len() >= k_limits::MAX_INFERRED_PRECONDITIONS
                     {
                         let span = self.bv.current_span.source_callsite();
-                        let warning = self.bv.cv.session.struct_span_warn(
+                        let warning = self.bv.cv.session.dcx().struct_span_warn(
                             span,
                             format!(
                                 "the {} {} have a {} tag",
@@ -1410,7 +1417,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         || tag_check.extract_promotable_disjuncts(false).is_none()
                     {
                         let span = self.bv.current_span.source_callsite();
-                        let warning = self.bv.cv.session.struct_span_warn(
+                        let warning = self.bv.cv.session.dcx().struct_span_warn(
                             span,
                             format!(
                                 "the {value_name} may have a {tag_name} tag, \
@@ -1426,11 +1433,11 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     // The existence of the tag on the value is different from the expectation.
                     // In this case, report an error.
                     let span = self.bv.current_span.source_callsite();
-                    let warning = self
-                        .bv
-                        .cv
-                        .session
-                        .struct_span_warn(span, format!("the {value_name} has a {tag_name} tag"));
+                    let warning =
+                        self.bv.cv.session.dcx().struct_span_warn(
+                            span,
+                            format!("the {value_name} has a {tag_name} tag"),
+                        );
                     self.bv.emit_diagnostic(warning);
                 }
 
@@ -1536,8 +1543,12 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         if entry_cond_as_bool.unwrap_or(false) {
                             let error = get_assert_msg_description(msg);
                             let span = self.bv.current_span;
-                            let warning =
-                                self.bv.cv.session.struct_span_warn(span, error.to_string());
+                            let warning = self
+                                .bv
+                                .cv
+                                .session
+                                .dcx()
+                                .struct_span_warn(span, error.to_string());
                             self.bv.emit_diagnostic(warning);
                             // No need to push a precondition, the caller can never satisfy it.
                             return;
@@ -1571,7 +1582,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                         // Can't make this the caller's problem.
                         let warning = format!("possible {}", get_assert_msg_description(msg));
                         let span = self.bv.current_span;
-                        let warning = self.bv.cv.session.struct_span_warn(span, warning);
+                        let warning = self.bv.cv.session.dcx().struct_span_warn(span, warning);
                         self.bv.emit_diagnostic(warning);
                         return;
                     }
@@ -1654,6 +1665,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
             .bv
             .cv
             .session
+            .dcx()
             .struct_span_warn(span, "Inline assembly code cannot be analyzed by MIRAI.");
         self.bv.emit_diagnostic(warning);
         // Don't stop the analysis if we are building a call graph.
@@ -2589,7 +2601,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                 }
             }
             mir::AggregateKind::Closure(def_id, args)
-            | mir::AggregateKind::Coroutine(def_id, args, _) => {
+            | mir::AggregateKind::Coroutine(def_id, args) => {
                 let ty = self.bv.tcx.type_of(*def_id).skip_binder();
                 let func_const = self.visit_function_reference(*def_id, ty, Some(args));
                 let func_val = Rc::new(func_const.clone().into());
@@ -3608,7 +3620,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                             TyKind::Adt(adt_def, _) => adt_def
                                 .discriminants(self.bv.tcx)
                                 .find(|(_, var)| var.val == data),
-                            TyKind::Coroutine(def_id, args, _) => {
+                            TyKind::Coroutine(def_id, args) => {
                                 let generator = args.as_coroutine();
                                 generator
                                     .discriminants(*def_id, self.bv.tcx)
@@ -3906,8 +3918,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     let len_path = Path::new_length(base_path.clone());
                     self.bv.update_value_at(len_path, len_val);
                 }
-                TyKind::Closure(def_id, generic_args)
-                | TyKind::Coroutine(def_id, generic_args, _) => {
+                TyKind::Closure(def_id, generic_args) | TyKind::Coroutine(def_id, generic_args) => {
                     let func_const = self.visit_function_reference(*def_id, ty, Some(generic_args));
                     let func_val = Rc::new(func_const.clone().into());
                     self.bv
@@ -3918,7 +3929,7 @@ impl<'block, 'analysis, 'compilation, 'tcx> BlockVisitor<'block, 'analysis, 'com
                     rustc_middle::ty::AliasTy { def_id, .. },
                 ) => {
                     if let TyKind::Closure(def_id, generic_args)
-                    | TyKind::Coroutine(def_id, generic_args, _) =
+                    | TyKind::Coroutine(def_id, generic_args) =
                         self.bv.tcx.type_of(*def_id).skip_binder().kind()
                     {
                         let func_const =

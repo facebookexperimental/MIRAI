@@ -262,6 +262,7 @@ impl<'compilation, 'tcx> CrateVisitor<'compilation, 'tcx> {
             }
             if !expected_errors.check_messages(diags) {
                 self.session
+                    .dcx()
                     .fatal(format!("test failed: {}", self.file_name));
             }
         } else {

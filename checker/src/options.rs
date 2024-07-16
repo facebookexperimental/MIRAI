@@ -115,7 +115,7 @@ impl Options {
     ) -> Vec<String> {
         self.parse(
             &shellwords::split(s).unwrap_or_else(|e| {
-                handler.early_error(format!("Cannot parse argument string: {e:?}"))
+                handler.early_fatal(format!("Cannot parse argument string: {e:?}"))
             }),
             handler,
             running_test_harness,
@@ -203,7 +203,7 @@ impl Options {
                 match matches.get_one::<String>("body_analysis_timeout") {
                     Some(s) => match s.parse::<u64>() {
                         Ok(v) => v,
-                        Err(_) => handler.early_error("--body_analysis_timeout expects an integer"),
+                        Err(_) => handler.early_fatal("--body_analysis_timeout expects an integer"),
                     },
                     None => assume_unreachable!(),
                 }
@@ -214,7 +214,7 @@ impl Options {
             {
                 Some(s) => match s.parse::<u64>() {
                     Ok(v) => v,
-                    Err(_) => handler.early_error("--crate_analysis_timeout expects an integer"),
+                    Err(_) => handler.early_fatal("--crate_analysis_timeout expects an integer"),
                 },
                 None => assume_unreachable!(),
             }

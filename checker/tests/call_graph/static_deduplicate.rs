@@ -66,19 +66,19 @@ commit;
   ],
   "callables": [
     {
-      "name": "/static_deduplicate/fn1(u32,&ReBound(DebruijnIndex(0), BoundRegion { var: 0, kind: BrNamed(DefId(0:7 ~ static_deduplicate[7f6a]::fn1::'_), '_) }) str)->(u32, &ReBound(DebruijnIndex(0), BoundRegion { var: 0, kind: BrNamed(DefId(0:7 ~ static_deduplicate[7f6a]::fn1::'_), '_) }) str)",
+      "name": "/static_deduplicate/fn1(u32,&ReBound(DebruijnIndex(0), BoundRegion { var: 0, kind: BrNamed(DefId(0:7 ~ static_deduplicate[671b]::fn1::'_), '_) }) str)->(u32, &ReBound(DebruijnIndex(0), BoundRegion { var: 0, kind: BrNamed(DefId(0:7 ~ static_deduplicate[671b]::fn1::'_), '_) }) str)",
       "file_index": 0,
       "first_line": 10,
       "local": true
     },
     {
-      "name": "/static_deduplicate/fn2(u32,&ReBound(DebruijnIndex(0), BoundRegion { var: 0, kind: BrNamed(DefId(0:8 ~ static_deduplicate[7f6a]::fn2::'_), '_) }) str)->(u32, &ReBound(DebruijnIndex(0), BoundRegion { var: 0, kind: BrNamed(DefId(0:8 ~ static_deduplicate[7f6a]::fn2::'_), '_) }) str)",
+      "name": "/static_deduplicate/fn2(u32,&ReBound(DebruijnIndex(0), BoundRegion { var: 0, kind: BrNamed(DefId(0:8 ~ static_deduplicate[671b]::fn2::'_), '_) }) str)->(u32, &ReBound(DebruijnIndex(0), BoundRegion { var: 0, kind: BrNamed(DefId(0:8 ~ static_deduplicate[671b]::fn2::'_), '_) }) str)",
       "file_index": 0,
       "first_line": 13,
       "local": true
     },
     {
-      "name": "/static_deduplicate/fn3(u32,&ReBound(DebruijnIndex(0), BoundRegion { var: 0, kind: BrNamed(DefId(0:9 ~ static_deduplicate[7f6a]::fn3::'_), '_) }) str)->(u32, &ReBound(DebruijnIndex(0), BoundRegion { var: 0, kind: BrNamed(DefId(0:9 ~ static_deduplicate[7f6a]::fn3::'_), '_) }) str)",
+      "name": "/static_deduplicate/fn3(u32,&ReBound(DebruijnIndex(0), BoundRegion { var: 0, kind: BrNamed(DefId(0:9 ~ static_deduplicate[671b]::fn3::'_), '_) }) str)->(u32, &ReBound(DebruijnIndex(0), BoundRegion { var: 0, kind: BrNamed(DefId(0:9 ~ static_deduplicate[671b]::fn3::'_), '_) }) str)",
       "file_index": 0,
       "first_line": 16,
       "local": true

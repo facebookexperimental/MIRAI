@@ -309,6 +309,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
             let warning = self
                 .cv
                 .session
+                .dcx()
                 .struct_span_warn(self.current_span, "The analysis of this function timed out");
             self.emit_diagnostic(warning);
         }
@@ -1130,7 +1131,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
             if entry_cond_as_bool.unwrap_or(true) && !in_range_as_bool.unwrap_or(true) {
                 let span = self.current_span;
                 let message = "effective offset is outside allocated range";
-                let warning = self.cv.session.struct_span_warn(span, message);
+                let warning = self.cv.session.dcx().struct_span_warn(span, message);
                 self.emit_diagnostic(warning);
             }
         }
@@ -1563,7 +1564,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
         ) = (old_layout, new_layout)
         {
             if *old_source == LayoutSource::DeAlloc {
-                let warning = self.cv.session.struct_span_warn(
+                let warning = self.cv.session.dcx().struct_span_warn(
                     self.current_span,
                     "the pointer points to memory that has already been deallocated",
                 );
@@ -1589,7 +1590,11 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                         "deallocates"
                     }
                 );
-                let warning = self.cv.session.struct_span_warn(self.current_span, message);
+                let warning = self
+                    .cv
+                    .session
+                    .dcx()
+                    .struct_span_warn(self.current_span, message);
                 self.emit_diagnostic(warning);
             }
         }
@@ -2014,7 +2019,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                 &self.type_visitor().generic_argument_map,
             );
             if source_field_index >= source_len {
-                let warning = self.cv.session.struct_span_warn(
+                let warning = self.cv.session.dcx().struct_span_warn(
                     self.current_span,
                     "The union is not fully initialized by this assignment",
                 );
@@ -2101,7 +2106,7 @@ impl<'analysis, 'compilation, 'tcx> BodyVisitor<'analysis, 'compilation, 'tcx> {
                     // Get another field
                     source_field_index += 1;
                     if source_field_index >= source_len {
-                        let warning = self.cv.session.struct_span_warn(
+                        let warning = self.cv.session.dcx().struct_span_warn(
                             self.current_span,
                             "The union is not fully initialized by this assignment",
                         );

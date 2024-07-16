@@ -131,7 +131,7 @@ pub fn is_public(def_id: DefId, tcx: TyCtxt<'_>) -> bool {
                                 .opt_def_id()
                                 .map_or_else(
                                     || {
-                                        tcx.sess.span_delayed_bug(
+                                        tcx.sess.dcx().span_delayed_bug(
                                             tr.path.span,
                                             "trait without a def-id",
                                         );
@@ -257,7 +257,7 @@ fn append_mangled_type<'tcx>(str: &mut String, ty: Ty<'tcx>, tcx: TyCtxt<'tcx>) 
                 }
             }
         }
-        TyKind::Coroutine(def_id, subs, _) => {
+        TyKind::Coroutine(def_id, subs) => {
             str.push_str("coroutine_");
             str.push_str(qualified_type_name(tcx, *def_id).as_str());
             for sub in subs.as_coroutine().args {
@@ -505,7 +505,7 @@ pub fn is_concrete(ty: &TyKind<'_>) -> bool {
         TyKind::Adt(_, gen_args)
         | TyKind::Closure(_, gen_args)
         | TyKind::FnDef(_, gen_args)
-        | TyKind::Coroutine(_, gen_args, _)
+        | TyKind::Coroutine(_, gen_args)
         | TyKind::Alias(_, rustc_middle::ty::AliasTy { args: gen_args, .. }) => {
             are_concrete(gen_args)
         }

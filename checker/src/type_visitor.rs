@@ -159,7 +159,7 @@ impl<'tcx> TypeVisitor<'tcx> {
                     }
                 }
             }
-            TyKind::Coroutine(_, args, _) => {
+            TyKind::Coroutine(_, args) => {
                 for (i, ty) in args.as_coroutine().prefix_tys().iter().enumerate() {
                     let var_type = ExpressionType::from(ty.kind());
                     let mut qualifier = path.clone();
@@ -503,7 +503,7 @@ impl<'tcx> TypeVisitor<'tcx> {
                                         });
                                 }
                             }
-                            TyKind::Coroutine(def_id, args, _) => {
+                            TyKind::Coroutine(def_id, args) => {
                                 let mut tuple_types =
                                     args.as_coroutine().state_tys(*def_id, self.tcx);
                                 if let Some(field_tys) = tuple_types.nth(*ordinal) {
@@ -959,7 +959,7 @@ impl<'tcx> TypeVisitor<'tcx> {
                         let variant = &def.variants()[*ordinal];
                         let field_tys = variant.fields.iter().map(|fd| fd.ty(self.tcx, args));
                         return Ty::new_tup_from_iter(self.tcx, field_tys);
-                    } else if let TyKind::Coroutine(def_id, args, _) = base_ty.kind() {
+                    } else if let TyKind::Coroutine(def_id, args) = base_ty.kind() {
                         let mut tuple_types = args.as_coroutine().state_tys(*def_id, self.tcx);
                         if let Some(field_tys) = tuple_types.nth(ordinal.index()) {
                             return Ty::new_tup_from_iter(self.tcx, field_tys);
@@ -1239,12 +1239,9 @@ impl<'tcx> TypeVisitor<'tcx> {
                 closures_being_specialized.remove(def_id);
                 specialized_closure
             }
-            TyKind::Coroutine(def_id, args, movability) => Ty::new_coroutine(
-                self.tcx,
-                *def_id,
-                self.specialize_generic_args(args, map),
-                *movability,
-            ),
+            TyKind::Coroutine(def_id, args) => {
+                Ty::new_coroutine(self.tcx, *def_id, self.specialize_generic_args(args, map))
+            }
             TyKind::CoroutineWitness(def_id, args) => {
                 let specialized_types = self.specialize_generic_args(args, map);
                 Ty::new_coroutine_witness(self.tcx, *def_id, specialized_types)
